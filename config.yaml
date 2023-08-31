@@ -1,0 +1,18 @@
+seed_value: 41
+model_type: "regression_transformer"
+data_directory: '/scratch/mlsample/protein_dnn/sars-cov-2-data/processed'
+data_type: 'weighted'
+num_workers: 4
+
+num_epochs: 10
+num_layers: 1
+d_model: 2
+nhead: 1
+d_ff: 2
+dropout_rate: 0.1
+batch_size: 4096
+learning_rate: 0.001
+
+debug: False
+save_data_set: False
+load_saved_data_set: False
