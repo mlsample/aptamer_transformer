@@ -18,7 +18,7 @@ def read_data_files(cfg):
     # Read each CSV file into a dataframe and append it to the list
     if cfg['debug'] is True:
         for idx, file in enumerate(data_path):
-            df = pd.read_csv(file, header=None, names=['sequence'], nrows=1000)
+            df = pd.read_csv(file, header=None, names=['sequence'], nrows=100000)
             dfs[data_files[idx]] = df
     else:
         for idx, file in enumerate(data_path):
@@ -26,6 +26,65 @@ def read_data_files(cfg):
             dfs[data_files[idx]] = df
         
     return dfs
+
+def read_data_files_no_r1(cfg):
+    """
+    Reads all the CSV files in the specified directory and returns a list of dataframes.
+    Each dataframe contains a single column named 'sequence' with the sequences from the corresponding CSV file.
+    """
+    directory = cfg['data_directory']
+    # Get a list of all the CSV files in the directory
+    data_files = os.listdir(directory)
+    data_files = [file for file in data_files if 'HanS_R1.txt' not in file]
+    print(data_files)
+    data_path = [os.path.join(directory, file) for file in data_files]
+    
+    
+    dfs = {}
+    # Read each CSV file into a dataframe and append it to the list
+    if cfg['debug'] is True:
+        for idx, file in enumerate(data_path):
+            df = pd.read_csv(file, header=None, names=['sequence'], nrows=100000)
+            dfs[data_files[idx]] = df
+    else:
+        for idx, file in enumerate(data_path):
+            df = pd.read_csv(file, header=None, names=['sequence'])
+            dfs[data_files[idx]] = df
+        
+    return dfs
+
+
+def load_and_preprocess_weighted_frequency_data_no_r1(cfg):
+    dfs = read_data_files_no_r1(cfg)
+    
+    files = list(dfs.keys())
+    round_number = [int(re.findall(r'\d+', name)[0]) for name in files]
+    
+    counter_set = [Counter(dfs[key]['sequence']) for key in dfs.keys()]
+    
+    weight_factor = [np.log(rounds) for rounds in round_number]
+    
+    weighted_counter_set = []
+    for counts, factor in zip(counter_set, weight_factor):
+        weighted_counts = Counter({k: v * factor for k, v in counts.items()})
+        weighted_counter_set.append(weighted_counts)     
+    
+    counters_combined = sum(weighted_counter_set, Counter())
+    
+    counters_list = [(k, v) for k, v in counters_combined.items()]
+    
+    # sorted_normalized_items = get_min_max_normalized_frequency(counters_combined)
+    df = pd.DataFrame(counters_list, columns=['Sequence', 'Normalized_Frequency'])
+    
+    minimun = df['Normalized_Frequency'].min()
+    maximum = df['Normalized_Frequency'].max()
+    
+    df['Normalized_Frequency'] = df['Normalized_Frequency'].apply(lambda x: normalize_between_a_and_b(x, -1, 1, minimun, maximum))
+    
+    df = df.sort_values(by='Normalized_Frequency', ascending=False).reset_index()
+    return df
+
+
 
 def get_min_max_normalized_frequency(combined_counter):
     # Extract the raw frequencies
@@ -66,7 +125,13 @@ def load_and_preprocess_weighted_frequency_data(cfg):
     
     weighted_counter_set = []
     for counts, factor in zip(counter_set, weight_factor):
-        weighted_counts = Counter({k: v * factor for k, v in counts.items()})
+        log_normalized = Counter({k: np.log(1 + v)  for k, v in counts.items()})
+        
+        mean_log = np.mean(list(log_normalized.values()))
+        std_log = np.std(list(log_normalized.values()))
+        z_score_normalized = Counter({k: ((v - mean_log)/std_log) for k, v in counts.items()})
+        
+        weighted_counts = Counter({k: v * factor for k, v in z_score_normalized.items()})
         weighted_counter_set.append(weighted_counts)     
     
     counters_combined = sum(weighted_counter_set, Counter())
@@ -75,9 +140,20 @@ def load_and_preprocess_weighted_frequency_data(cfg):
     
     # sorted_normalized_items = get_min_max_normalized_frequency(counters_combined)
     df = pd.DataFrame(counters_list, columns=['Sequence', 'Normalized_Frequency'])
+    
+    minimun = df['Normalized_Frequency'].min()
+    maximum = df['Normalized_Frequency'].max()
+    
+    # df['Normalized_Frequency'] = df['Normalized_Frequency'].apply(lambda x: normalize_between_a_and_b(x, -1, 1, minimun, maximum))
+    
     df = df.sort_values(by='Normalized_Frequency', ascending=False).reset_index()
     return df
 
+def normalize_between_a_and_b(x, a, b, minimun, maximum):
+    return ((b - a) * ((x - minimun) / (maximum - minimun))) + a
+
+def undo_normalization(x, a, b, minimun, maximum):
+    return ((x - a) * ((maximum - minimun) / (b - a))) + minimun
 
 def get_enrichment(round_1_count, round_2_count):
     enrichment = {}

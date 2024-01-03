@@ -15,7 +15,7 @@ def train_model(model, train_loader, optimizer, cfg):
     
     for batch_idx, (data, target, len_x) in pbar:
         data, target = data.to(cfg['device']), target.to(cfg['device'])
-        
+
         # Check for NaN values
         handle_nan(data, "Training Data")
         handle_nan(target, "Training Target")
@@ -34,16 +34,16 @@ def train_model(model, train_loader, optimizer, cfg):
         loss.backward()
         
         # Apply gradient clipping
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         
         optimizer.step()
         
         train_loss_list.append(loss.item())
         
-        if cfg['rank'] == 1:
+        if cfg['rank'] == 0:
             # Print progress every 100 batches
-            if (batch_idx + 1) % 100 == 0:
-                print(f"Batch {batch_idx+1}/{total_batches} completed | Loss: {loss.item():.4f}")
+            if (batch_idx + 1) % 4 == 0:
+                print(f"Batch {batch_idx+1}/{total_batches} completed | Loss: {sum(train_loss_list) / len(train_loss_list)} ")
         
     avg_train_loss = sum(train_loss_list) / len(train_loss_list)
     return avg_train_loss, train_loss_list
