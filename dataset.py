@@ -21,7 +21,9 @@ class DNASequenceDataSet(Dataset):
         
         self.x = self.padded_tensor
         
-        self.y = torch.Tensor(self.labels).float()
+        self.y = torch.Tensor(self.labels)
+        # self.y = self.y.type(torch.LongTensor)
+        self.y = self.y.float()
 
     
     def __getitem__(self, idx):
@@ -36,8 +38,10 @@ class DNASequenceDataSet(Dataset):
     def tokenize(self, data):
         # Nucleotide to integer mapping, including 'N'
         nucleotide_to_int = {'A': 0, 'T': 1, 'C': 2, 'G': 3, 'N': 4, 'P':5}
+        # nucleotide_to_int = {'A': 0, 'T': 1, 'C': 2, 'G': 3, 'N': 4, 'P':5, 'CLS':6}
         # Tokenize sequences
         tokenized_sequences = data.apply(lambda x: [nucleotide_to_int.get(n, 4) for n in x])  # Default to 4 ('N') if nucleotide not in dictionary
+        # tokenized_sequences = data.apply(lambda x: [nucleotide_to_int['CLS']] + [nucleotide_to_int.get(n, 4) for n in x])  # Default to 4 ('N') if nucleotide not in dictionary
         # Convert to PyTorch tensor
         tokenized_tensor = [torch.tensor(seq, dtype=torch.long) for seq in tokenized_sequences]
 

@@ -1,0 +1,6 @@
+data
+*.pkl
+dna_dataset.h5
+loss_data.json
+model_checkpoint.pt
+*.pyc

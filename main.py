@@ -4,39 +4,21 @@ from torch.utils.data import DataLoader, random_split
 from torch.utils.data.distributed import DistributedSampler
 from torch import optim
 import torch.nn.functional as F
-from data_utils import load_and_preprocess_data, load_and_preprocess_weighted_frequency_data
+from data_utils import load_dataset, get_data_loaders
 from dataset import DNASequenceDataSet
-from model import DNATransformerEncoder
-from training_utils import train_model, validate_model, test_model
+from model import get_model
+from training_utils import train_model, validate_model, test_model, checkpointing
 from torch.nn.parallel import DistributedDataParallel
 import yaml
 import json
 import argparse
-
+import pandas as pd
 
 def initialize_data_and_model(cfg):
-    if cfg['load_saved_data_set'] is not False:
-        try:
-            print("Loading dataset from disk...")
-            dna_dataset = torch.load('dna_dataset.pth', map_location=cfg['device'])
-        except:
-            raise ValueError(f"Invalid dataset file: {cfg['load_saved_data_set']}")
-    else:            
-        df = load_and_preprocess_weighted_frequency_data(cfg)
-        dna_dataset = DNASequenceDataSet(df)
-    
-    if cfg['save_data_set'] is True:
-        torch.save(dna_dataset, 'dna_dataset.pth')
-    
+    dna_dataset = load_dataset(cfg)
     model = get_model(cfg)
     model.to(cfg['device'])
     return dna_dataset, model
-
-def get_model(cfg):
-    if cfg['model_type'] == "regression_transformer":
-        return DNATransformerEncoder(cfg)
-    else:
-        raise ValueError(f"Invalid model type: {cfg['model_type']}")
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description='Aptamer occurance regression task')
@@ -61,6 +43,7 @@ def main():
         dist.init_process_group(backend='nccl')
         rank = dist.get_rank()
         world_size = dist.get_world_size()
+        cfg['is_distributed'] = True
     else:
         rank = 0
         world_size = 1
@@ -76,69 +59,49 @@ def main():
 
     dna_dataset, model = initialize_data_and_model(cfg)
 
-    train_size = int(0.7 * len(dna_dataset))
-    val_size = int(0.15 * len(dna_dataset))
-    test_size = len(dna_dataset) - train_size - val_size
-
-    train_set, val_set, test_set = random_split(dna_dataset, [train_size, val_size, test_size])
-
-    if args.distributed:
-        train_sampler = DistributedSampler(train_set, num_replicas=world_size, rank=rank, seed=cfg['seed_value'])
-        val_sampler = DistributedSampler(val_set, num_replicas=world_size, rank=rank, seed=cfg['seed_value'])
-        test_sampler = DistributedSampler(test_set, num_replicas=world_size, rank=rank, seed=cfg['seed_value'])
-    else:
-        train_sampler = None
-        val_sampler = None
-        test_sampler = None
-
-    train_loader = DataLoader(train_set, batch_size=cfg['batch_size'], sampler=train_sampler, num_workers=cfg['num_workers'])
-    val_loader = DataLoader(val_set, batch_size=cfg['batch_size'], sampler=val_sampler, num_workers=cfg['num_workers'])
-    test_loader = DataLoader(test_set, batch_size=cfg['batch_size'], sampler=test_sampler, num_workers=cfg['num_workers'])
-
+    train_loader, val_loader, test_loader, train_sampler = get_data_loaders(dna_dataset, cfg, args)
+    
     optimizer = optim.Adam(model.parameters(), lr=cfg['learning_rate'])
+    lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, 
+        patience = cfg['lr_patience'], 
+        verbose = False,
+        min_lr = 1.0e-13
+    )
+    
+    if cfg['load_last_checkpoint'] is True:
+        checkpoint = torch.load('model_checkpoint.pt', map_location=cfg['device'])
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        if rank == 0:
+            print('Loaded last checkpoint')
     
     if args.distributed:
-        model = DistributedDataParallel(model, device_ids=[cfg['device']])
+        model = DistributedDataParallel(model, device_ids=[cfg['device']], find_unused_parameters=True)
         dist.barrier()
 
     # Training Loop
     
     loss_dict = {'train_loss': [], 'val_loss': []}
     for epoch in range(cfg['num_epochs']):
+        cfg['curr_epoch'] = epoch
+        
         if args.distributed:
             train_sampler.set_epoch(epoch)
         
         try:
             avg_train_loss, train_loss_list = train_model(model, train_loader, optimizer, cfg)
-            avg_val_loss, val_loss_list = validate_model(model, val_loader, cfg)
+            avg_val_loss, val_loss_list = validate_model(model, val_loader, lr_scheduler, cfg)
         except ValueError as e:
             print(f"Error occurred: {e}")
             break
-        
+ 
         if rank == 0:
-            print(f"Epoch: {epoch}, Train Loss: {avg_train_loss}, Validation Loss: {avg_val_loss}")
-            
-            if args.distributed:
-                state_dict = model.module.state_dict()
-            else:
-                state_dict = model.state_dict()
-                
-            checkpoint = {
-                'epoch': epoch,
-                'model_state_dict': state_dict,  # Use model.module.state_dict() for DDP
-                'optimizer_state_dict': optimizer.state_dict(),
-                'train_loss': avg_train_loss,
-                'val_loss': avg_val_loss,
-            }
-            torch.save(checkpoint, f"model_checkpoint.pt")
-                                
-            loss_dict['train_loss'].extend(train_loss_list)
-            loss_dict['val_loss'].extend(val_loss_list)
-            with open('loss_data.json', 'w') as f:
-                json.dump(loss_dict, f)
+            checkpointing(epoch, avg_train_loss, avg_val_loss, args, model, optimizer, loss_dict, train_loss_list, val_loss_list)
         
         if args.distributed:
             dist.barrier()
+            
     # Test the model after training
     try:
         avg_test_loss, test_loss_list = test_model(model, test_loader, cfg)

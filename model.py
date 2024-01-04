@@ -1,6 +1,17 @@
 import torch
 import torch.nn as nn
 import numpy as np
+from x_transformers import XTransformer, TransformerWrapper, Decoder, Encoder
+
+def get_model(cfg):
+    if cfg['model_type'] == "transformer_encoder":
+        return DNATransformerEncoder(cfg)
+    
+    elif cfg['model_type'] == "x_transformer_encoder":
+        return DNAXTransformerEncoder(cfg)
+    
+    else:
+        raise ValueError(f"Invalid model type: {cfg['model_type']}")
 
 class MultiHeadAttention(nn.Module):
     def __init__(self, cfg):
@@ -47,20 +58,36 @@ class DNATransformerEncoder(nn.Module):
         self.device = cfg['device']
         self.d_model = cfg['d_model']
         
-        self.embed = nn.Embedding(6, self.d_model)
+        self.embed = nn.Embedding(7, self.d_model)
         self.layers = nn.ModuleList([EncoderLayer(cfg) for _ in range(cfg['num_layers'])])
-        self.linear = nn.Linear(self.d_model, 1)
+        
+        if cfg['model_task'] == 'regression':
+            self.linear = nn.Linear(self.d_model, 1)
+        
+        elif cfg['model_task'] == 'classification':
+            self.linear = nn.Linear(self.d_model, cfg['num_classes'])
         
     def forward(self, x, len_x, attn_mask=None):
+        
         self.batch_size, self.seq_len = x.shape
+        
         x = self.embed(x)
         attn_mask = self.create_mask(len_x).movedim(1,0) 
+        
         x = x + self.get_position_encoding(self.seq_len, self.d_model)
+        
         for layer in self.layers:
             x = layer(x, attn_mask)
-        x = [torch.mean(x[i, :len_x[i], :], dim=0) for i in range(self.batch_size)]
-        x = torch.stack(x)
+
+        valid_elements_mask = ~attn_mask
+        valid_elements_mask = valid_elements_mask.unsqueeze(-1).float().movedim(1,0)
+        x = x * valid_elements_mask
+        x = torch.sum(x, dim=1) / valid_elements_mask.sum(dim=1)
+        # x = [torch.mean(x[i, :len_x[i], :], dim=0) for i in range(self.batch_size)]
+        # x = torch.stack(x)
+        
         x = self.linear(x)
+        
         return x
     
     def create_mask(self, len_x):
@@ -81,3 +108,62 @@ class DNATransformerEncoder(nn.Module):
                 else:
                     pos_enc[pos, i] = np.cos(theta)
         return torch.FloatTensor(pos_enc).to(self.device)
+
+class DNAXTransformerEncoder(nn.Module):
+    def __init__(self, cfg):
+        super(DNAXTransformerEncoder, self).__init__()
+        self.cfg = cfg
+        self.device = cfg['device']
+        self.d_model = cfg['d_model']
+        
+        self.x_transformer_encoder= TransformerWrapper(
+            num_tokens = cfg['num_tokens'],
+            max_seq_len = cfg['max_seq_len'],
+            num_memory_tokens = cfg['num_memory_tokens'],
+            l2norm_embed = cfg['l2norm_embed'],
+            attn_layers = Encoder(
+                dim = cfg['d_model'],
+                depth = cfg['num_layers'],
+                heads = cfg['nhead'],
+                layer_dropout = cfg['dropout_rate'],   # stochastic depth - dropout entire layer
+                attn_dropout = cfg['dropout_rate'],    # dropout post-attention
+                ff_dropout = cfg['dropout_rate'],       # feedforward dropout,
+                attn_flash = cfg['attn_flash'],
+                attn_num_mem_kv = cfg['attn_num_mem_kv'],
+                use_scalenorm = cfg['use_scalenorm'],
+                use_simple_rmsnorm = cfg['use_simple_rmsnorm'],
+                ff_glu = cfg['ff_glu'],
+                ff_swish = cfg['ff_swish'],
+                ff_no_bias = cfg['ff_no_bias'],
+                attn_talking_heads = cfg['attn_talking_heads']
+            )
+        )
+        
+        if cfg['model_task'] == 'regression':
+            self.linear = nn.Linear(self.d_model, 1)
+        
+        elif cfg['model_task'] == 'classification':
+            self.linear = nn.Linear(self.d_model, cfg['num_classes'])
+            
+    def forward(self, x, len_x, scr_mask=None):
+        self.batch_size, self.seq_len = x.shape
+        
+        scr_mask = self.create_mask(len_x)
+
+        x = self.x_transformer_encoder(x, mask=scr_mask, return_embeddings=True)
+        
+        scr_mask = scr_mask.unsqueeze(-1)
+        
+        valid_elements_mask = ~scr_mask
+        x = x * valid_elements_mask.float()
+        x = torch.sum(x, dim=1) / valid_elements_mask.sum(dim=1)
+        
+        x = self.linear(x)
+
+        return x
+    
+    def create_mask(self, len_x):
+        mask_pad = torch.zeros(self.batch_size, self.seq_len).bool()
+        for (idx, len_comment) in enumerate(len_x): 
+            mask_pad[idx, len_comment:self.seq_len] = 1
+        return mask_pad.to(self.device)
