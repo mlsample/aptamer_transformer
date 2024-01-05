@@ -111,7 +111,7 @@ def load_and_preprocess_enrichment_data(cfg):
 def load_dataset(cfg):
     if cfg['load_saved_data_set'] is not False:
         if cfg['model_task'] == 'classification':
-            df = pd.read_hdf('dna_dataset.h5', 'df')
+            df = pd.read_hdf('dna_dataset_classification.h5', 'df')
         elif cfg['model_task'] == 'regression':
             df = pd.read_hdf('dna_dataset_regression.h5', 'df')
         
@@ -123,7 +123,7 @@ def load_dataset(cfg):
     
     if cfg['save_data_set'] is True:
         if cfg['model_task'] == 'classification':
-            df.to_hdf('dna_dataset.h5', key='df', mode='w')
+            df.to_hdf('dna_dataset_classification.h5', key='df', mode='w')
         elif cfg['model_task'] == 'regression':
             df.to_hdf('dna_dataset_regression.h5', key='df', mode='w')
         
@@ -152,7 +152,9 @@ def get_data_loaders(dna_dataset, cfg, args):
     return train_loader, val_loader, test_loader, train_sampler
 
 
-
+##########################################################
+#Deprecated functions
+##########################################################
 
 def count_one_nucleotide_away(dfs):
     """
