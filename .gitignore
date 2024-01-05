@@ -4,3 +4,4 @@ data
 loss_data.json
 model_checkpoint.pt
 *.pyc
+__pycache__
