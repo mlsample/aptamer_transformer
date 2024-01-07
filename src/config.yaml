@@ -1,21 +1,21 @@
 #model parameters
-model_type: "x_transformer_encoder"
-model_task: "regression"
+model_type: "aptamer_bert"
+model_task: "mlm"
 num_classes: 2  # Invalid for regression task
 num_layers: 12
 d_model: 512
 nhead: 8
-d_ff: 512
+d_ff: 128
 dropout_rate: 0.1
 pooling: 'mean'
 
 #training parameters
-num_epochs: 10
+num_epochs: 1
 seed_value: 41
 batch_size: 512
 num_workers: 2
 learning_rate: 0.001
-lr_patience: 3
+lr_patience: 6
 
 #data parameters
 data_directory: '/glade/u/home/mlsample/work/aptamer_transformer/data/sars-cov2-raw'
@@ -23,13 +23,19 @@ classification_threshold: 0.9
 n_quantiles: 1000
 round_weighting: True # Only valid if load_saved_data_set is False
 
+#AptamerBERT parameters
+tokenizer_path: '/glade/u/home/mlsample/work/aptamer_transformer/data/AptamerBERT_tokenizer'
+mlm_probability: 0.15
+aptamer_bert_path: '/glade/u/home/mlsample/work/aptamer_transformer/results/mlm/mlm_model_checkpoint.pt'
+
+
 #x_transformer parameters
 num_tokens: 6
 max_seq_len: 41
 
 attn_flash: True
-attn_num_mem_kv: 16
-num_memory_tokens: 20
+attn_num_mem_kv: 2
+num_memory_tokens: 2
 use_scalenorm: False
 l2norm_embed: True
 use_simple_rmsnorm: True
@@ -42,4 +48,6 @@ attn_talking_heads: False
 debug: False
 save_data_set: False
 load_saved_data_set: True
-load_last_checkpoint: False
+load_last_checkpoint: True
+results_path: '/glade/u/home/mlsample/work/aptamer_transformer/results/mlm'
+checkpoint_path: '/glade/u/home/mlsample/work/aptamer_transformer/results/mlm/mlm_model_checkpoint.pt'

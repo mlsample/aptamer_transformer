@@ -52,3 +52,27 @@ class DNASequenceDataSet(Dataset):
         padded_tensor = pad_sequence(tokenized_tensor, batch_first=True, padding_value=5)  # Padding value set to 5 ('P')
 
         return padded_tensor
+    
+
+class AptamerBertDataSet(Dataset):
+    def __init__(self, df):
+        """
+        Initialize the AptamerBert.
+        
+        Parameters:
+            data (Tensor): The tokenized and embedded DNA sequences.
+            labels (Tensor, optional): The labels corresponding to each sequence.
+            vocab (dict, optional): The vocabulary mapping each nucleotide to a unique integer.
+        """
+        self.x = df.Sequence
+        self.len_x = df.Sequence.apply(len)
+        
+        self.y  = df.Normalized_Frequency
+        
+    def __getitem__(self, idx):
+        batch_len_x = self.len_x  # Length of the sequence
+        
+        return self.x[idx], self.y[idx], batch_len_x[idx]
+    
+    def __len__(self):
+        return len(self.x)

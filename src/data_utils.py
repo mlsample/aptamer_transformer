@@ -4,7 +4,7 @@ from collections import Counter
 import numpy as np
 import re
 from sklearn.preprocessing import quantile_transform 
-from dataset import DNASequenceDataSet
+from dataset import DNASequenceDataSet, AptamerBertDataSet
 from torch.utils.data import DataLoader, random_split
 from torch.utils.data.distributed import DistributedSampler
 
@@ -110,22 +110,34 @@ def load_and_preprocess_enrichment_data(cfg):
 
 def load_dataset(cfg):
     if cfg['load_saved_data_set'] is not False:
-        if cfg['model_task'] == 'classification':
-            df = pd.read_hdf('dna_dataset_classification.h5', 'df')
-        elif cfg['model_task'] == 'regression':
-            df = pd.read_hdf('dna_dataset_regression.h5', 'df')
         
-        dna_dataset = DNASequenceDataSet(df)
+        if cfg['model_task'] == 'classification' or 'evidence':
+            df = pd.read_hdf('../data/saved_h5/dna_dataset_classification.h5', 'df')
+            
+        elif cfg['model_task'] == 'regression':
+            df = pd.read_hdf('../data/saved_h5/dna_dataset_regression.h5', 'df')
+        
+        if cfg['model_type'] == 'aptamer_bert':
+            dna_dataset = AptamerBertDataSet(df)
+            
+        else:
+            dna_dataset = DNASequenceDataSet(df)
 
     else:            
         df = load_and_preprocess_enrichment_data(cfg)
-        dna_dataset = DNASequenceDataSet(df)
+             
+        if cfg['model_type'] == 'aptamer_bert':
+            dna_dataset = AptamerBertDataSet(df)
+        else:
+            dna_dataset = DNASequenceDataSet(df)
     
     if cfg['save_data_set'] is True:
-        if cfg['model_task'] == 'classification':
-            df.to_hdf('dna_dataset_classification.h5', key='df', mode='w')
+        
+        if cfg['model_task'] == 'classification' or 'evidence':
+            df.to_hdf('../data/saved_h5/dna_dataset_classification.h5', key='df', mode='w')
+            
         elif cfg['model_task'] == 'regression':
-            df.to_hdf('dna_dataset_regression.h5', key='df', mode='w')
+            df.to_hdf('../data/saved_h5/dna_dataset_regression.h5', key='df', mode='w')
         
     return dna_dataset
 

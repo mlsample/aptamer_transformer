@@ -1,4 +1,4 @@
-name: guess
+name: guess_apt
 channels:
   - pytorch
   - nvidia

@@ -6,6 +6,37 @@ from mlguess.torch.class_losses import edl_digamma_loss
 import json
 import torch.distributed as dist
 
+def get_loss_function(cfg):
+    if cfg['model_task'] == 'regression':
+        return F.mse_loss
+    elif cfg['model_task'] == 'evidence':
+        return edl_digamma_loss
+    elif cfg['model_task'] == 'classification':
+        return F.cross_entropy
+    elif cfg['model_task'] == 'mlm':
+        return F.cross_entropy
+    else:
+        raise ValueError(f"Unknown loss function: {cfg['model_task']}")
+
+def compute_loss(loss_function, output, target, cfg):
+    if cfg['model_task'] == 'evidence':
+        annealing_coefficient = 10
+        target_hot = F.one_hot(target.long(), cfg['num_classes'])
+        loss = loss_function(output, target_hot, cfg['curr_epoch'], cfg['num_classes'], annealing_coefficient, device=cfg['device']) 
+        
+    elif cfg['model_task'] == 'classification':
+        loss = loss_function(output, target.long())
+        
+    elif cfg['model_task'] == 'regression':
+        loss = loss_function(output.squeeze(), target.float()) 
+        
+    elif cfg['model_task'] == 'mlm':
+        src = output[0]
+        tgt = output[2]
+        loss = loss_function(src.movedim(2,1), tgt)
+    
+    return loss
+
 def train_model(model, train_loader, optimizer, cfg):
     model.train()
     train_loss_list = []
@@ -17,20 +48,21 @@ def train_model(model, train_loader, optimizer, cfg):
     loss_function = get_loss_function(cfg)
     
     for batch_idx, (data, target, len_x) in enumerate(train_loader):
-        data, target = data.to(cfg['device']), target.to(cfg['device'])
+        if cfg['model_type'] != 'aptamer_bert':
+            data, target = data.to(cfg['device']), target.to(cfg['device'])
 
-        # Check for NaN values
-        handle_nan(data, "Training Data")
-        handle_nan(target, "Training Target")
+            # Check for NaN values
+            handle_nan(data, "Training Data")
+            handle_nan(target, "Training Target")
         
         optimizer.zero_grad()
         
         output = model(data, len_x)
         
         # Check for NaN values
-        handle_nan(output, "Training Model Output")
+        # handle_nan(output, "Training Model Output")
         
-        loss = compute_loss(loss_function, output.to(cfg['device']), target.to(cfg['device']), cfg)
+        loss = compute_loss(loss_function, output, target, cfg)
         
         # Check for NaN values
         handle_nan(loss, "Training Loss")
@@ -64,15 +96,18 @@ def validate_model(model, val_loader, lr_scheduler, cfg):
     with torch.no_grad():
         for batch in val_loader:
             x, y, len_x = batch
-            x, y = x.to(cfg['device']), y.to(cfg['device'])
-            handle_nan(x, "Validation Data")
-            handle_nan(y, "Validation Target")
+            if cfg['model_type'] != 'aptamer_bert':
+                x, y = x.to(cfg['device']), y.to(cfg['device'])
+
+                # Check for NaN values
+                handle_nan(x, "Training Data")
+                handle_nan(y, "Training Target")
             
             output = model(x, len_x)
-            handle_nan(output, "Validation Model Output")
+            # handle_nan(output, "Validation Model Output")
             
-            if cfg['model_type'] != 'x_transformer_encoder':
-                output = output.squeeze()    
+            # if cfg['model_type'] != 'x_transformer_encoder':
+            #     output = output.squeeze()    
 
             loss = compute_loss(loss_function, output, y, cfg)
             handle_nan(loss, "Validation Loss")
@@ -93,62 +128,51 @@ def test_model(model, test_loader, cfg):
     with torch.no_grad():
         for batch in test_loader:
             x, y, len_x = batch
-            handle_nan(x, "Test Data")
-            handle_nan(y, "Test Target")
-            
-            x, y = x.to(cfg['device']), y.to(cfg['device'])
+            if cfg['model_type'] != 'aptamer_bert':
+                x, y = x.to(cfg['device']), y.to(cfg['device'])
+
+                # Check for NaN values
+                handle_nan(x, "Training Data")
+                handle_nan(y, "Training Target")
             
             output = model(x, len_x)
-            handle_nan(output, "Test Model Output")
+            # handle_nan(output, "Test Model Output")
             
-            if cfg['model_type'] != 'x_transformer_encoder':
-                output = output.squeeze()    
+            # if cfg['model_type'] != 'x_transformer_encoder':
+            #     output = output.squeeze()    
             
             loss = compute_loss(loss_function, output, y, cfg)
             handle_nan(loss, "Test Loss")
             
             test_loss_list.append(loss.item())
-            y_true_list.append(y.cpu().numpy())
-            y_pred_list.append(output.cpu().numpy())
+            
+            if cfg['model_task'] == 'mlm':
+                y_true_list.append(x)
+            else:
+                y_true_list.append(y.cpu().numpy())
+                
+            if cfg['model_task'] == 'mlm':
+                out = output[0].cpu().numpy()
+                tgt = output[1].cpu().numpy()
+                y_pred_list.append(((out, tgt)))
+            else:
+                y_pred_list.append(output.cpu().numpy())
     
     avg_test_loss = sum(test_loss_list) / len(test_loss_list)
     
     # Saving y_true and y_pred to a file
     
-    with open('test_predictions.pkl', 'wb') as f:
+    with open(f'{cfg["results_path"]}/test_predictions.pkl', 'wb') as f:
         pickle.dump((y_true_list, y_pred_list), f)
     
     return avg_test_loss, test_loss_list
 
-def get_loss_function(cfg):
-    if cfg['model_task'] == 'regression':
-        return F.mse_loss
-    elif cfg['model_task'] == 'evidence':
-        return edl_digamma_loss
-    elif cfg['model_task'] == 'classification':
-        return F.cross_entropy
-    else:
-        raise ValueError(f"Unknown loss function: {cfg['model_task']}")
-
-def compute_loss(loss_function, output, target, cfg):
-    if cfg['model_task'] == 'evidence':
-        annealing_coefficient = 10
-        target_hot = F.one_hot(target, cfg['num_classes'])
-        loss = loss_function(output, target_hot, cfg['curr_epoch'], cfg['num_classes'], annealing_coefficient, device=cfg['device']) 
-        
-    elif cfg['model_task'] == 'classification':
-        loss = loss_function(output, target.long())
-        
-    elif cfg['model_task'] == 'regression':
-        loss = loss_function(output.squeeze(), target.float()) 
-    
-    return loss
 
 def handle_nan(tensor, name):
     if torch.isnan(tensor).any():
         raise ValueError(f"{name} contains NaN values.")
 
-def checkpointing(epoch, avg_train_loss, avg_val_loss, args, model, optimizer, loss_dict, train_loss_list, val_loss_list):
+def checkpointing(epoch, avg_train_loss, avg_val_loss, args, model, optimizer, loss_dict, train_loss_list, val_loss_list, cfg):
     print(f"Epoch: {epoch}, Train Loss: {avg_train_loss}, Validation Loss: {avg_val_loss}")
     
     if args.distributed:
@@ -163,11 +187,11 @@ def checkpointing(epoch, avg_train_loss, avg_val_loss, args, model, optimizer, l
         'train_loss': avg_train_loss,
         'val_loss': avg_val_loss,
     }
-    torch.save(checkpoint, f"model_checkpoint.pt")
+    torch.save(checkpoint, cfg['checkpoint_path'])
                         
     loss_dict['train_loss'].extend(train_loss_list)
     loss_dict['val_loss'].extend(val_loss_list)
-    with open('loss_data.json', 'w') as f:
+    with open(f'{cfg["results_path"]}/loss_data.json', 'w') as f:
         json.dump(loss_dict, f)
 
     return None

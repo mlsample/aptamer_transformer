@@ -14,11 +14,6 @@ import json
 import argparse
 import pandas as pd
 
-def initialize_data_and_model(cfg):
-    dna_dataset = load_dataset(cfg)
-    model = get_model(cfg)
-    model.to(cfg['device'])
-    return dna_dataset, model
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description='Aptamer occurance regression task')
@@ -57,20 +52,30 @@ def main():
         'world_size': world_size
     })
 
-    dna_dataset, model = initialize_data_and_model(cfg)
+    dna_dataset = load_dataset(cfg)
+    model = get_model(cfg)
+    model.to(cfg['device'])
 
     train_loader, val_loader, test_loader, train_sampler = get_data_loaders(dna_dataset, cfg, args)
     
     optimizer = optim.Adam(model.parameters(), lr=cfg['learning_rate'])
-    lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, 
-        patience = cfg['lr_patience'], 
-        verbose = False,
-        min_lr = 1.0e-13
-    )
+    if rank == 0:
+        lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, 
+            patience = cfg['lr_patience'], 
+            verbose = True,
+            min_lr = 1.0e-13
+        )
+    else:
+        lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, 
+            patience = cfg['lr_patience'], 
+            verbose = False,
+            min_lr = 1.0e-13
+        )
     
     if cfg['load_last_checkpoint'] is True:
-        checkpoint = torch.load('model_checkpoint.pt', map_location=cfg['device'])
+        checkpoint = torch.load(cfg['checkpoint_path'], map_location=cfg['device'])
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         if rank == 0:
@@ -97,7 +102,7 @@ def main():
             break
  
         if rank == 0:
-            checkpointing(epoch, avg_train_loss, avg_val_loss, args, model, optimizer, loss_dict, train_loss_list, val_loss_list)
+            checkpointing(epoch, avg_train_loss, avg_val_loss, args, model, optimizer, loss_dict, train_loss_list, val_loss_list, cfg)
         
         if args.distributed:
             dist.barrier()
