@@ -1,18 +1,16 @@
 import torch
 import torch.distributed as dist
-from torch.utils.data import DataLoader, random_split
-from torch.utils.data.distributed import DistributedSampler
 from torch import optim
-import torch.nn.functional as F
-from data_utils import load_dataset, get_data_loaders
-from dataset import DNASequenceDataSet
-from model import get_model
-from training_utils import train_model, validate_model, test_model, checkpointing
 from torch.nn.parallel import DistributedDataParallel
-import yaml
-import json
+from torch.utils.tensorboard import SummaryWriter
+
 import argparse
-import pandas as pd
+import traceback
+
+from training_utils import train_model, validate_model, test_model, checkpointing
+from data_utils import load_dataset, get_data_loaders, read_cfg
+from distributed_utils import ddp_setup_process_group
+from factories_model_loss import get_model
 
 
 def parse_arguments():
@@ -22,35 +20,17 @@ def parse_arguments():
     return parser.parse_known_args()[0]
 
 def main():
-    args = parse_arguments()
     
-    # Read the YAML configuration file
-    with open(args.config, 'r') as stream:
-        try:
-            cfg = yaml.safe_load(stream)
-        except yaml.YAMLError as exc:
-            print(exc)
+    args = parse_arguments()
+    cfg = read_cfg(args.config)
     
     torch.manual_seed(cfg['seed_value'])
     torch.cuda.manual_seed_all(cfg['seed_value'])
     
-    if args.distributed:
-        dist.init_process_group(backend='nccl')
-        rank = dist.get_rank()
-        world_size = dist.get_world_size()
-        cfg['is_distributed'] = True
-    else:
-        rank = 0
-        world_size = 1
+    rank, cfg = ddp_setup_process_group(cfg, args.distributed)
 
-    device = torch.device("cuda", rank)    
-
-    # Update the cfg dictionary with dynamic values
-    cfg.update({
-        'device': device,
-        'rank': rank,
-        'world_size': world_size
-    })
+    # if rank == 0:
+    #     cfg['writer'] = SummaryWriter(log_dir=cfg['tensorboard_log_path'])
 
     dna_dataset = load_dataset(cfg)
     model = get_model(cfg)
@@ -85,6 +65,9 @@ def main():
         model = DistributedDataParallel(model, device_ids=[cfg['device']], find_unused_parameters=True)
         dist.barrier()
 
+
+        # Initialize TensorBoard SummaryWriter
+
     # Training Loop
     
     loss_dict = {'train_loss': [], 'val_loss': []}
@@ -96,10 +79,15 @@ def main():
         
         try:
             avg_train_loss, train_loss_list = train_model(model, train_loader, optimizer, cfg)
+            
             avg_val_loss, val_loss_list = validate_model(model, val_loader, lr_scheduler, cfg)
-        except ValueError as e:
-            print(f"Error occurred: {e}")
-            break
+            
+            # if cfg['rank'] == 0 and 'writer' in cfg:
+            #     cfg['writer'].add_scalar('Loss/Train', avg_train_loss, epoch)
+            #     cfg['writer'].add_scalar('Loss/Val', avg_val_loss, epoch)
+            
+        except Exception:
+            return print(traceback.format_exc())
  
         if rank == 0:
             checkpointing(epoch, avg_train_loss, avg_val_loss, args, model, optimizer, loss_dict, train_loss_list, val_loss_list, cfg)
@@ -110,8 +98,10 @@ def main():
     # Test the model after training
     try:
         avg_test_loss, test_loss_list = test_model(model, test_loader, cfg)
+        
         if rank == 0:
             print(f"Test Loss: {avg_test_loss}")
+            
     except ValueError as e:
         print(f"Error occurred during testing: {e}")
 

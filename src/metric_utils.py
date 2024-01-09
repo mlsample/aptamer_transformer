@@ -176,8 +176,6 @@ def plot_confusion_matrix(processed_true, processed_preds):
 
     return None
 
-from sklearn.metrics import accuracy_score, confusion_matrix
-
 def per_token_metrics(processed_true, processed_preds):
     """
     Calculate and print per-token accuracy, sensitivity, and specificity.

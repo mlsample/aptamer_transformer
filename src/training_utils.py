@@ -5,72 +5,33 @@ import pickle
 from mlguess.torch.class_losses import edl_digamma_loss
 import json
 import torch.distributed as dist
-
-def get_loss_function(cfg):
-    if cfg['model_task'] == 'regression':
-        return F.mse_loss
-    elif cfg['model_task'] == 'evidence':
-        return edl_digamma_loss
-    elif cfg['model_task'] == 'classification':
-        return F.cross_entropy
-    elif cfg['model_task'] == 'mlm':
-        return F.cross_entropy
-    else:
-        raise ValueError(f"Unknown loss function: {cfg['model_task']}")
-
-def compute_loss(loss_function, output, target, cfg):
-    if cfg['model_task'] == 'evidence':
-        annealing_coefficient = 10
-        target_hot = F.one_hot(target.long(), cfg['num_classes'])
-        loss = loss_function(output, target_hot, cfg['curr_epoch'], cfg['num_classes'], annealing_coefficient, device=cfg['device']) 
-        
-    elif cfg['model_task'] == 'classification':
-        loss = loss_function(output, target.long())
-        
-    elif cfg['model_task'] == 'regression':
-        loss = loss_function(output.squeeze(), target.float()) 
-        
-    elif cfg['model_task'] == 'mlm':
-        src = output[0]
-        tgt = output[2]
-        loss = loss_function(src.movedim(2,1), tgt)
-    
-    return loss
+from factories_model_loss import get_loss_function, compute_loss, compute_model_output
+from metric_utils import *
+import os
 
 def train_model(model, train_loader, optimizer, cfg):
     model.train()
     train_loss_list = []
     total_batches = len(train_loader)
     
-    if cfg['rank'] == 0:
-        pbar = tqdm(total=total_batches)
-    update_interval = 2
     loss_function = get_loss_function(cfg)
     
-    for batch_idx, (data, target, len_x) in enumerate(train_loader):
-        if cfg['model_type'] != 'aptamer_bert':
-            data, target = data.to(cfg['device']), target.to(cfg['device'])
-
-            # Check for NaN values
-            handle_nan(data, "Training Data")
-            handle_nan(target, "Training Target")
+    if cfg['rank'] == 0:
+        pbar = tqdm(total=total_batches)
+        update_interval = 2
+    
+    for batch_idx, (data) in enumerate(train_loader):
+        
+        model_inputs, target = data[:-1], data[-1]
         
         optimizer.zero_grad()
+        model_outputs = compute_model_output(model, model_inputs, cfg)
         
-        output = model(data, len_x)
-        
-        # Check for NaN values
-        # handle_nan(output, "Training Model Output")
-        
-        loss = compute_loss(loss_function, output, target, cfg)
-        
-        # Check for NaN values
-        handle_nan(loss, "Training Loss")
+        loss = compute_loss(loss_function, model_outputs, target, cfg)
         loss.backward()
         
         # Apply gradient clipping
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-
         optimizer.step()
         
         train_loss_list.append(loss.item())
@@ -86,77 +47,56 @@ def train_model(model, train_loader, optimizer, cfg):
     if cfg['rank'] == 0:
         pbar.close()
     avg_train_loss = sum(train_loss_list) / len(train_loss_list)
+    
     return avg_train_loss, train_loss_list
 
 def validate_model(model, val_loader, lr_scheduler, cfg):
     model.eval()
     val_loss_list = []
-    
-    loss_function = get_loss_function(cfg)
-    with torch.no_grad():
-        for batch in val_loader:
-            x, y, len_x = batch
-            if cfg['model_type'] != 'aptamer_bert':
-                x, y = x.to(cfg['device']), y.to(cfg['device'])
-
-                # Check for NaN values
-                handle_nan(x, "Training Data")
-                handle_nan(y, "Training Target")
-            
-            output = model(x, len_x)
-            # handle_nan(output, "Validation Model Output")
-            
-            # if cfg['model_type'] != 'x_transformer_encoder':
-            #     output = output.squeeze()    
-
-            loss = compute_loss(loss_function, output, y, cfg)
-            handle_nan(loss, "Validation Loss")
-
-            val_loss_list.append(loss.item())
-            
-    avg_val_loss = sum(val_loss_list) / len(val_loss_list)
-    lr_scheduler.step(avg_val_loss)
-    return avg_val_loss, val_loss_list
-
-def test_model(model, test_loader, cfg):
-    model.eval()
-    test_loss_list = []
     y_true_list = []
     y_pred_list = []
     
     loss_function = get_loss_function(cfg)
     with torch.no_grad():
-        for batch in test_loader:
-            x, y, len_x = batch
-            if cfg['model_type'] != 'aptamer_bert':
-                x, y = x.to(cfg['device']), y.to(cfg['device'])
+        for data in val_loader:
+            
+            model_inputs, target = data[:-1], data[-1]
+            
+            model_outputs = compute_model_output(model, model_inputs, cfg)
+        
+            loss = compute_loss(loss_function, model_outputs, target, cfg)
 
-                # Check for NaN values
-                handle_nan(x, "Training Data")
-                handle_nan(y, "Training Target")
+            val_loss_list.append(loss.item())
+            y_true_list.append(target)
+            y_pred_list.append(model_outputs)
             
-            output = model(x, len_x)
-            # handle_nan(output, "Test Model Output")
+    avg_val_loss = sum(val_loss_list) / len(val_loss_list)
+    lr_scheduler.step(avg_val_loss)
+    # if cfg['rank'] == 0 and 'writer' in cfg:
+    #     compute_classificaion_metrics(y_pred_list, y_true_list, cfg)
+    return avg_val_loss, val_loss_list
+
+def test_model(model, test_loader, cfg):
+    
+    model.eval()
+    
+    test_loss_list = []
+    y_true_list = []
+    y_pred_list = []
+    
+    loss_function = get_loss_function(cfg)
+    
+    with torch.no_grad():
+        for data in test_loader:
             
-            # if cfg['model_type'] != 'x_transformer_encoder':
-            #     output = output.squeeze()    
+            model_inputs, target = data[:-1], data[-1]
             
-            loss = compute_loss(loss_function, output, y, cfg)
-            handle_nan(loss, "Test Loss")
+            model_outputs = compute_model_output(model, model_inputs, cfg)
+            loss = compute_loss(loss_function, model_outputs, target, cfg)
             
             test_loss_list.append(loss.item())
-            
-            if cfg['model_task'] == 'mlm':
-                y_true_list.append(x)
-            else:
-                y_true_list.append(y.cpu().numpy())
-                
-            if cfg['model_task'] == 'mlm':
-                out = output[0].cpu().numpy()
-                tgt = output[1].cpu().numpy()
-                y_pred_list.append(((out, tgt)))
-            else:
-                y_pred_list.append(output.cpu().numpy())
+            y_true_list.append(target)
+            y_pred_list.append(model_outputs)
     
     avg_test_loss = sum(test_loss_list) / len(test_loss_list)
     
@@ -166,11 +106,6 @@ def test_model(model, test_loader, cfg):
         pickle.dump((y_true_list, y_pred_list), f)
     
     return avg_test_loss, test_loss_list
-
-
-def handle_nan(tensor, name):
-    if torch.isnan(tensor).any():
-        raise ValueError(f"{name} contains NaN values.")
 
 def checkpointing(epoch, avg_train_loss, avg_val_loss, args, model, optimizer, loss_dict, train_loss_list, val_loss_list, cfg):
     print(f"Epoch: {epoch}, Train Loss: {avg_train_loss}, Validation Loss: {avg_val_loss}")
@@ -187,6 +122,13 @@ def checkpointing(epoch, avg_train_loss, avg_val_loss, args, model, optimizer, l
         'train_loss': avg_train_loss,
         'val_loss': avg_val_loss,
     }
+    
+    if not os.path.exists(cfg['results_path']):
+        os.mkdir(cfg['results_path'])
+    
+    if os.path.exists(cfg['checkpoint_path']):
+        os.rename(cfg['checkpoint_path'], cfg['checkpoint_path'] + '.bak')
+        
     torch.save(checkpoint, cfg['checkpoint_path'])
                         
     loss_dict['train_loss'].extend(train_loss_list)
@@ -195,4 +137,25 @@ def checkpointing(epoch, avg_train_loss, avg_val_loss, args, model, optimizer, l
         json.dump(loss_dict, f)
 
     return None
+
+
+def compute_classificaion_metrics(y_preds, y_true, cfg):
+    y_true = torch.cat(y_true, dim=0)
+    y_preds = torch.cat(y_preds, dim=0)
+    
+    y_true = y_true.cpu().numpy()
+    y_preds = y_preds.cpu().numpy()
+    
+    y_preds = np.argmax(y_preds, axis=1)
+    
+    precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_preds, average='weighted')
+    
+    if cfg['rank'] == 0 and 'writer' in cfg:
+        cfg['writer'].add_scalar('Precision', precision, cfg['curr_epoch'])
+        cfg['writer'].add_scalar('Recall', recall, cfg['curr_epoch'])
+        cfg['writer'].add_scalar('F1', f1, cfg['curr_epoch'])
+    
+    return None
+    
+
         

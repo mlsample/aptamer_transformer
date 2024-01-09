@@ -1,38 +1,40 @@
-#model parameters
-model_type: "aptamer_bert"
-model_task: "mlm"
-num_classes: 2  # Invalid for regression task
-num_layers: 12
-d_model: 512
-nhead: 8
-d_ff: 128
-dropout_rate: 0.1
-pooling: 'mean'
+working_dir: '/glade/u/home/mlsample/work/aptamer_transformer'
+
+#Logging parameters
+load_last_checkpoint: True
+checkpoint_path: '{WORKING_DIR}/results/{MODEL_TYPE}/{MODEL_TYPE}_checkpoint.pt'
+results_path: '{WORKING_DIR}/results/{MODEL_TYPE}'
+tensorboard_log_path: '{WORKING_DIR}/results/{MODEL_TYPE}/'
+
+#model
+model_type: "aptamer_bert_classifier"  
+# transformer_encoder_regression
+# transformer_encoder_classification
+
+# x_transformer_regression
+# x_transformer_classification
+
+# aptamer_bert
+# aptamer_bert_regression
+# aptamer_bert_classification
 
 #training parameters
-num_epochs: 1
+num_epochs: 100
 seed_value: 41
-batch_size: 512
+batch_size: 2048
 num_workers: 2
 learning_rate: 0.001
 lr_patience: 6
 
-#data parameters
-data_directory: '/glade/u/home/mlsample/work/aptamer_transformer/data/sars-cov2-raw'
-classification_threshold: 0.9
-n_quantiles: 1000
-round_weighting: True # Only valid if load_saved_data_set is False
-
-#AptamerBERT parameters
-tokenizer_path: '/glade/u/home/mlsample/work/aptamer_transformer/data/AptamerBERT_tokenizer'
-mlm_probability: 0.15
-aptamer_bert_path: '/glade/u/home/mlsample/work/aptamer_transformer/results/mlm/mlm_model_checkpoint.pt'
-
+#transformer parameters
+num_classes: 2  # Invalid for regression task
+num_layers: 6
+d_model: 64
+nhead: 8
+d_ff: 512
+dropout_rate: 0.1
 
 #x_transformer parameters
-num_tokens: 6
-max_seq_len: 41
-
 attn_flash: True
 attn_num_mem_kv: 2
 num_memory_tokens: 2
@@ -44,10 +46,19 @@ ff_swish: True
 ff_no_bias: True
 attn_talking_heads: False
 
-#Convience parameters
-debug: False
+#AptamerBERT parameters
+tokenizer_path: '{WORKING_DIR}/data/AptamerBERT_tokenizer'
+mlm_probability: 0.15
+aptamer_bert_path: '{WORKING_DIR}/results/aptamer_bert/aptamer_bert_checkpoint.pt'
+#Current aptamer_bert checkpoint parameters are num_layers: 12, d_model: 512, nhead: 8, d_ff: 512, dropout_rate: 0.1  
+
+#data parameters
+classification_threshold: 0.9
+norm_2: 'quantile_transform'
+n_quantiles: 1000
+round_weighting: False # Only valid if load_saved_data_set is False
+
 save_data_set: False
 load_saved_data_set: True
-load_last_checkpoint: True
-results_path: '/glade/u/home/mlsample/work/aptamer_transformer/results/mlm'
-checkpoint_path: '/glade/u/home/mlsample/work/aptamer_transformer/results/mlm/mlm_model_checkpoint.pt'
+debug: False
+data_directory: '{WORKING_DIR}/data/sars-cov2-raw'

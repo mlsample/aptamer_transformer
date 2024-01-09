@@ -3,10 +3,28 @@ import pandas as pd
 from collections import Counter
 import numpy as np
 import re
-from sklearn.preprocessing import quantile_transform 
-from dataset import DNASequenceDataSet, AptamerBertDataSet
+import yaml
+import pickle
+
+from sklearn.preprocessing import quantile_transform , StandardScaler
+from dataset import *
 from torch.utils.data import DataLoader, random_split
 from torch.utils.data.distributed import DistributedSampler
+
+def read_cfg(args_config):
+    # Read the YAML configuration file
+    with open(args_config, 'r') as stream:
+        try:
+            cfg = yaml.safe_load(stream)
+            working_dir = cfg['working_dir']
+            model_type = cfg['model_type']
+            cfg = {k: v.replace('{WORKING_DIR}', f'{working_dir}') if isinstance(v, str) else v for k, v in cfg.items()}
+            cfg = {k: v.replace('{MODEL_TYPE}', f'{model_type}') if isinstance(v, str) else v for k, v in cfg.items()}
+
+        except yaml.YAMLError as exc:
+            print(exc)
+    
+    return cfg
 
 def read_data_files(cfg):
     """
@@ -98,48 +116,104 @@ def load_and_preprocess_enrichment_data(cfg):
     combined = sum((Counter(d) for d in quantile_normed_enrichment_scores.values()), Counter())
     df = pd.DataFrame.from_dict(combined, orient='index', columns=['Normalized_Frequency']).reset_index().rename(columns={'index': 'Sequence'})
     
-    if cfg['model_task'] == 'classification':
+    if cfg['model_type'] == 'transformer_encoder_classifier':
         df['Normalized_Frequency'] = df['Normalized_Frequency'].apply(lambda x: 1 if x >= cfg['classification_threshold'] else 0)
 
     # Using 'assign' to modify 'Normalized_Frequency' and sorting values
-    df = df.assign(
-        Normalized_Frequency=lambda x: quantile_transform(x['Normalized_Frequency'].values.reshape(-1, 1)).reshape(-1)
-    )
+    if cfg['norm_2'] == 'quantile_transform':
+        df = df.assign(
+            Normalized_Frequency=lambda x: quantile_transform(x['Normalized_Frequency'].values.reshape(-1, 1)).reshape(-1)
+        )
+    elif cfg['norm_2'] == 'standard_scaler':
+        scaler = StandardScaler()
+        df = df.assign(
+            Normalized_Frequency=lambda x: scaler.fit_transform(x['Normalized_Frequency'].values.reshape(-1, 1)).reshape(-1)
+        )
 
     return df
 
 def load_dataset(cfg):
     if cfg['load_saved_data_set'] is not False:
         
-        if cfg['model_task'] == 'classification' or 'evidence':
-            df = pd.read_hdf('../data/saved_h5/dna_dataset_classification.h5', 'df')
-            
-        elif cfg['model_task'] == 'regression':
-            df = pd.read_hdf('../data/saved_h5/dna_dataset_regression.h5', 'df')
-        
         if cfg['model_type'] == 'aptamer_bert':
-            dna_dataset = AptamerBertDataSet(df)
+            filepath = '../data/pickled/aptamer_bert_dataset.pickle'
             
-        else:
-            dna_dataset = DNASequenceDataSet(df)
-
+        elif cfg['model_type'] == 'transformer_encoder_classifier':
+            filepath = '../data/pickled/encoder_classification_dataset.pickle'
+            
+        elif cfg['model_type'] == 'aptamer_bert_classifier':
+            filepath = '../data/pickled/encoder_classification_dataset.pickle'
+        
+        elif cfg['model_type'] == 'transformer_encoder_regression' or 'x_transformer_encoder_regression':
+            filepath = '../data/pickled/encoder_regression_dataset.pickle'
+        
+        with open(filepath, 'rb') as f:
+            dna_dataset = pickle.load(f)
+            
     else:            
         df = load_and_preprocess_enrichment_data(cfg)
              
         if cfg['model_type'] == 'aptamer_bert':
-            dna_dataset = AptamerBertDataSet(df)
+            dna_dataset = AptamerBertDataSet(df, cfg)
         else:
-            dna_dataset = DNASequenceDataSet(df)
+            dna_dataset = DNAEncoderDataSet(df, cfg)
+
     
     if cfg['save_data_set'] is True:
-        
-        if cfg['model_task'] == 'classification' or 'evidence':
-            df.to_hdf('../data/saved_h5/dna_dataset_classification.h5', key='df', mode='w')
+
+        if cfg['model_type'] == 'aptamer_bert':
+            filepath = '../data/pickled/aptamer_bert_dataset.pickle'
             
-        elif cfg['model_task'] == 'regression':
-            df.to_hdf('../data/saved_h5/dna_dataset_regression.h5', key='df', mode='w')
+        elif cfg['model_type'] == 'transformer_encoder_classifier':
+            filepath = '../data/pickled/encoder_classification_dataset.pickle'
+            
+        elif cfg['model_type'] == 'aptamer_bert_classifier':
+            filepath = '../data/pickled/encoder_classification_dataset.pickle'
+        
+        elif cfg['model_type'] == 'transformer_encoder_regression' or 'x_transformer_encoder_regression':
+            filepath = '../data/pickled/encoder_regression_dataset.pickle'
+        
+        with open(filepath, 'wb') as f:
+            pickle.dump(dna_dataset, f, pickle.HIGHEST_PROTOCOL)
         
     return dna_dataset
+
+# def load_dataset(cfg):
+#     if cfg['load_saved_data_set'] is not False:
+        
+#         if cfg['model_type'] == 'transformer_encoder_classifier' or 'evidence':
+#             df = pd.read_hdf('../data/saved_h5/dna_dataset_classification.h5', 'df')
+            
+#         elif cfg['model_type'] == 'transformer_encoder_regression' or 'x_transformer_encoder_regression':
+#             df = pd.read_hdf('../data/saved_h5/dna_dataset_regression.h5', 'df')
+        
+#         if cfg['model_type'] == 'aptamer_bert':
+#             dna_dataset = AptamerBertDataSet(df, cfg)
+            
+#         else:
+#             # dna_dataset = DNASequenceDataSet(df, cfg)
+#             dna_dataset = DNAEncoderDataSet(df, cfg)
+
+#     else:            
+#         df = load_and_preprocess_enrichment_data(cfg)
+             
+#         if cfg['model_type'] == 'aptamer_bert':
+#             dna_dataset = AptamerBertDataSet(df, cfg)
+#         else:
+#             # dna_dataset = DNASequenceDataSet(df, cfg)
+#             dna_dataset = DNAEncoderDataSet(df, cfg)
+
+    
+#     if cfg['save_data_set'] is True:
+        
+#         if cfg['model_type'] == 'transformer_encoder_classifier' or 'evidence':
+#             df.to_hdf('../data/saved_h5/dna_dataset_classification.h5', key='df', mode='w')
+            
+#         elif cfg['model_type'] == 'transformer_encoder_regression' or 'x_transformer_encoder_regression':
+#             df.to_hdf('../data/saved_h5/dna_dataset_regression.h5', key='df', mode='w')
+        
+#     return dna_dataset
+
 
 def get_data_loaders(dna_dataset, cfg, args):
     train_size = int(0.7 * len(dna_dataset))
