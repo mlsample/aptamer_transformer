@@ -55,6 +55,7 @@ def main():
         )
     
     if cfg['load_last_checkpoint'] is True:
+        
         checkpoint = torch.load(cfg['checkpoint_path'], map_location=cfg['device'])
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])

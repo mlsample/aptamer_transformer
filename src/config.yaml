@@ -1,15 +1,16 @@
 working_dir: '/glade/u/home/mlsample/work/aptamer_transformer'
 
 #Logging parameters
-load_last_checkpoint: True
+load_last_checkpoint: False
 checkpoint_path: '{WORKING_DIR}/results/{MODEL_TYPE}/{MODEL_TYPE}_checkpoint.pt'
 results_path: '{WORKING_DIR}/results/{MODEL_TYPE}'
 tensorboard_log_path: '{WORKING_DIR}/results/{MODEL_TYPE}/'
 
 #model
-model_type: "aptamer_bert_classifier"  
+model_type: "aptamer_bert_evidence"  
 # transformer_encoder_regression
-# transformer_encoder_classification
+# transformer_encoder_classifier
+# transformer_encoder_evidence
 
 # x_transformer_regression
 # x_transformer_classification
@@ -17,9 +18,10 @@ model_type: "aptamer_bert_classifier"
 # aptamer_bert
 # aptamer_bert_regression
 # aptamer_bert_classification
+# aptamer_bert_evidence
 
 #training parameters
-num_epochs: 100
+num_epochs: 15
 seed_value: 41
 batch_size: 2048
 num_workers: 2
@@ -50,7 +52,7 @@ attn_talking_heads: False
 tokenizer_path: '{WORKING_DIR}/data/AptamerBERT_tokenizer'
 mlm_probability: 0.15
 aptamer_bert_path: '{WORKING_DIR}/results/aptamer_bert/aptamer_bert_checkpoint.pt'
-#Current aptamer_bert checkpoint parameters are num_layers: 12, d_model: 512, nhead: 8, d_ff: 512, dropout_rate: 0.1  
+#Current aptamer_bert checkpoint parameters are num_layers: 6, d_model: 64, nhead: 8, d_ff: 512, dropout_rate: 0.1  
 
 #data parameters
 classification_threshold: 0.9

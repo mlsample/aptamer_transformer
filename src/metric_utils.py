@@ -77,6 +77,11 @@ def load_test_predictions(filename='test_predictions.pkl'):
         y_true_list, y_pred_list = pickle.load(f)
     return y_true_list, y_pred_list
 
+def load_test_input(filename='test_input.pkl'):
+    with open(filename, 'rb') as f:
+        x_list = pickle.load(f)
+    return x_list
+
 def evaluate_regression_model(y_true, y_pred):
     # Calculating metrics
     mse = mean_squared_error(y_true, y_pred)

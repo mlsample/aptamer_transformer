@@ -81,6 +81,7 @@ def test_model(model, test_loader, cfg):
     model.eval()
     
     test_loss_list = []
+    x_list = []
     y_true_list = []
     y_pred_list = []
     
@@ -95,6 +96,7 @@ def test_model(model, test_loader, cfg):
             loss = compute_loss(loss_function, model_outputs, target, cfg)
             
             test_loss_list.append(loss.item())
+            x_list.append(model_inputs)
             y_true_list.append(target)
             y_pred_list.append(model_outputs)
     
@@ -104,6 +106,8 @@ def test_model(model, test_loader, cfg):
     
     with open(f'{cfg["results_path"]}/test_predictions.pkl', 'wb') as f:
         pickle.dump((y_true_list, y_pred_list), f)
+    with open(f'{cfg["results_path"]}/test_input.pkl', 'wb') as f:
+        pickle.dump(x_list, f)
     
     return avg_test_loss, test_loss_list
 

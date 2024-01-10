@@ -150,6 +150,41 @@ class DNATransformerEncoderClassifier(nn.Module):
         
         return x
     
+class DNATransformerEncoderEvidence(nn.Module):
+    def __init__(self, cfg):
+        super(DNATransformerEncoderEvidence, self).__init__()
+        self.cfg = cfg
+        self.device = cfg['device']
+        self.d_model = cfg['d_model']
+        self.n_classes = cfg['num_classes']
+        
+        self.transformer_encoder = TransformerEncoder(cfg)
+        self.linear = nn.Linear(self.d_model, cfg['num_classes'])
+        
+    def forward(self, x, attn_mask=None):
+        x = self.transformer_encoder(x, attn_mask=attn_mask)
+        
+        x = x[:, 0, :]
+        
+        x = self.linear(x)
+        
+        return x
+    
+    def predict_uncertainty(self, input_ids, attn_mask=None):
+        y_pred = self(input_ids, attn_mask=attn_mask)
+        
+        # dempster-shafer theory
+        evidence = relu_evidence(y_pred) # can also try softplus and exp evidence schemes
+        alpha = evidence + 1
+        S = torch.sum(alpha, dim=1, keepdim=True)
+        u = self.n_classes / S
+        prob = alpha / S
+        
+        # law of total uncertainty 
+        epistemic = prob * (1 - prob) / (S + 1)
+        aleatoric = prob - prob**2 - epistemic
+        return prob, u, aleatoric, epistemic
+    
 class DNATransformerEncoderRegression(nn.Module):
     def __init__(self, cfg):
         super(DNATransformerEncoderRegression, self).__init__()
@@ -212,6 +247,40 @@ class AptamerBertClassifier(nn.Module):
         x = embed[:, 0, :]
         
         return self.linear(x)
+
+class AptamerBertEvidence(nn.Module):
+    def __init__(self, cfg):
+        super(AptamerBertEvidence, self).__init__()
+
+        self.aptamer_bert_encoding = AptamerBert(cfg)
+        self.aptamer_bert_encoding.load_state_dict(
+            torch.load(cfg['aptamer_bert_path'], map_location=cfg['device']
+                )['model_state_dict']
+            )
+        
+        self.linear = nn.Linear(cfg['d_model'], cfg['num_classes'])
+        self.n_classes = cfg['num_classes']
+    def forward(self, x, attn_mask=None):
+        logits, embed = self.aptamer_bert_encoding(x, attn_mask=attn_mask)
+        
+        x = embed[:, 0, :]
+        
+        return self.linear(x)
+    
+    def predict_uncertainty(self, input_ids, attn_mask=None):
+        y_pred = self(input_ids, attn_mask=attn_mask)
+        
+        # dempster-shafer theory
+        evidence = relu_evidence(y_pred) # can also try softplus and exp evidence schemes
+        alpha = evidence + 1
+        S = torch.sum(alpha, dim=1, keepdim=True)
+        u = self.n_classes / S
+        prob = alpha / S
+        
+        # law of total uncertainty 
+        epistemic = prob * (1 - prob) / (S + 1)
+        aleatoric = prob - prob**2 - epistemic
+        return prob, u, aleatoric, epistemic
 
 class XTransformerEncoder(nn.Module):
     def __init__(self, cfg):

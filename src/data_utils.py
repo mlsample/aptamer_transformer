@@ -138,14 +138,22 @@ def load_dataset(cfg):
         if cfg['model_type'] == 'aptamer_bert':
             filepath = '../data/pickled/aptamer_bert_dataset.pickle'
             
-        elif cfg['model_type'] == 'transformer_encoder_classifier':
-            filepath = '../data/pickled/encoder_classification_dataset.pickle'
-            
-        elif cfg['model_type'] == 'aptamer_bert_classifier':
+        elif cfg['model_type'] in (
+            'transformer_encoder_classifier',
+            'aptamer_bert_classifier',
+            'aptamer_bert_evidence',
+            'transformer_encoder_evidence'
+            ):
             filepath = '../data/pickled/encoder_classification_dataset.pickle'
         
-        elif cfg['model_type'] == 'transformer_encoder_regression' or 'x_transformer_encoder_regression':
+        elif cfg['model_type'] in (
+            'transformer_encoder_regression',
+            'x_transformer_encoder_regression'
+            ):
             filepath = '../data/pickled/encoder_regression_dataset.pickle'
+            
+        else:
+            return f'(load_dataset) Invalid model type: {cfg["model_type"]})'
         
         with open(filepath, 'rb') as f:
             dna_dataset = pickle.load(f)
@@ -164,14 +172,22 @@ def load_dataset(cfg):
         if cfg['model_type'] == 'aptamer_bert':
             filepath = '../data/pickled/aptamer_bert_dataset.pickle'
             
-        elif cfg['model_type'] == 'transformer_encoder_classifier':
-            filepath = '../data/pickled/encoder_classification_dataset.pickle'
-            
-        elif cfg['model_type'] == 'aptamer_bert_classifier':
+        elif cfg['model_type'] in (
+            'transformer_encoder_classifier',
+            'aptamer_bert_classifier',
+            'aptamer_bert_evidence',
+            'transformer_encoder_evidence'
+            ):
             filepath = '../data/pickled/encoder_classification_dataset.pickle'
         
-        elif cfg['model_type'] == 'transformer_encoder_regression' or 'x_transformer_encoder_regression':
+        elif cfg['model_type'] in (
+            'transformer_encoder_regression',
+            'x_transformer_encoder_regression'
+            ):
             filepath = '../data/pickled/encoder_regression_dataset.pickle'
+            
+        else:
+            raise ValueError(f'(load_dataset) Invalid model type: {cfg["model_type"]})')
         
         with open(filepath, 'wb') as f:
             pickle.dump(dna_dataset, f, pickle.HIGHEST_PROTOCOL)
