@@ -131,3 +131,35 @@ class AptamerBertDataSet(Dataset):
     
     def __len__(self):
         return len(self.tokenized_seqs)
+    
+    
+class StructEncoderDataSet(Dataset):
+    def __init__(self, df, cfg):
+        """
+        Initialize the AptamerBert.
+        
+        Parameters:
+            data (Tensor): The tokenized and embedded DNA sequences.
+            labels (Tensor, optional): The labels corresponding to each sequence.
+            vocab (dict, optional): The vocabulary mapping each nucleotide to a unique integer.
+        """
+        
+        self.tokenizer = AutoTokenizer.from_pretrained(cfg['dot_bracket_tokenizer_path'])
+        cfg['num_tokens'] = self.tokenizer.vocab_size
+        cfg['max_seq_len'] = self.tokenizer.model_max_length
+        
+        space_sep_seqs = df.Sequence.apply(lambda x: ' '.join(x)).to_list()
+        # self.tokenized_seqs = space_sep_seqs
+        
+        self.tokenized_data = self.tokenizer(space_sep_seqs, padding=True, return_tensors="pt")
+        self.tokenized_seqs = self.tokenized_data['input_ids']
+        self.attn_masks = self.tokenized_data['attention_mask']
+        
+        self.y  = df.Normalized_Frequency
+        
+    def __getitem__(self, idx):
+
+        return self.tokenized_seqs[idx], self.attn_masks[idx], self.y[idx]
+    
+    def __len__(self):
+        return len(self.tokenized_seqs)

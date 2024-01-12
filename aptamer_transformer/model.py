@@ -70,18 +70,6 @@ class DecoderLayer(nn.Module):
         x = self.norm3(x + self.dropout(ff_output))
         return x
     
-def get_position_encoding(seq_len, d_model):
-    def get_angle(pos, i, d_model):
-        return pos / np.power(10000, (2 * (i//2)) / d_model)
-    pos_enc = np.zeros((seq_len, d_model))
-    for pos in range(seq_len):
-        for i in range(d_model):
-            theta = get_angle(pos, i, d_model)
-            if i % 2 == 0:
-                pos_enc[pos, i] = np.sin(theta)
-            else:
-                pos_enc[pos, i] = np.cos(theta)
-    return torch.FloatTensor(pos_enc)
 
 class TransformerEncoder(nn.Module):
     def __init__(self, cfg):
@@ -99,12 +87,25 @@ class TransformerEncoder(nn.Module):
         self.batch_size, self.seq_len = x.shape
         
         x = self.embed(x)
-        x = x + get_position_encoding(self.seq_len, self.d_model).to(self.device)
+        x = x + self.get_position_encoding(self.seq_len, self.d_model).to(self.device)
         
         for layer in self.layers:
             x = layer(x, attn_mask)
         
         return x
+    
+    def get_position_encoding(self, seq_len, d_model):
+        def get_angle(pos, i, d_model):
+            return pos / np.power(10000, (2 * (i//2)) / d_model)
+        pos_enc = np.zeros((seq_len, d_model))
+        for pos in range(seq_len):
+            for i in range(d_model):
+                theta = get_angle(pos, i, d_model)
+                if i % 2 == 0:
+                    pos_enc[pos, i] = np.sin(theta)
+                else:
+                    pos_enc[pos, i] = np.cos(theta)
+        return torch.FloatTensor(pos_enc)
     
 class TransformerDecoder(nn.Module):
     def __init__(self, cfg):
@@ -122,14 +123,26 @@ class TransformerDecoder(nn.Module):
         self.batch_size, self.seq_len = x.shape
         
         x = self.embed(x)
-        x = x + get_position_encoding(self.seq_len, self.d_model).to(self.cfg['device'])
+        x = x + self.get_position_encoding(self.seq_len, self.d_model).to(self.cfg['device'])
         
         for layer in self.layers:
             x = layer(x, enc_output, src_mask, tgt_mask)
 
         x = self.linear(x)
         return x
-
+    
+    def get_position_encoding(self, seq_len, d_model):
+        def get_angle(pos, i, d_model):
+            return pos / np.power(10000, (2 * (i//2)) / d_model)
+        pos_enc = np.zeros((seq_len, d_model))
+        for pos in range(seq_len):
+            for i in range(d_model):
+                theta = get_angle(pos, i, d_model)
+                if i % 2 == 0:
+                    pos_enc[pos, i] = np.sin(theta)
+                else:
+                    pos_enc[pos, i] = np.cos(theta)
+        return torch.FloatTensor(pos_enc)
 
 class DNATransformerEncoderClassifier(nn.Module):
     def __init__(self, cfg):
@@ -204,6 +217,27 @@ class DNATransformerEncoderRegression(nn.Module):
         x = self.linear(x)
         
         return x
+    
+    
+class DotBracketTransformerEncoderClassifier(nn.Module):
+    def __init__(self, cfg):
+        super(DotBracketTransformerEncoderClassifier, self).__init__()
+        self.cfg = cfg
+        self.device = cfg['device']
+        self.d_model = cfg['d_model']
+        
+        self.transformer_encoder = TransformerEncoder(cfg)
+        self.linear = nn.Linear(self.d_model, cfg['num_classes'])
+        
+    def forward(self, x, attn_mask=None):
+        x = self.transformer_encoder(x, attn_mask=attn_mask)
+        
+        x = x[:, 0, :]
+        
+        x = self.linear(x)
+        
+        return x
+    
     
 class AptamerBert(nn.Module):
     def __init__(self, cfg):
@@ -281,6 +315,25 @@ class AptamerBertEvidence(nn.Module):
         epistemic = prob * (1 - prob) / (S + 1)
         aleatoric = prob - prob**2 - epistemic
         return prob, u, aleatoric, epistemic
+    
+class AptamerBertRegression(nn.Module):
+    def __init__(self, cfg):
+        super(AptamerBertRegression, self).__init__()
+
+        self.aptamer_bert_encoding = AptamerBert(cfg)
+        self.aptamer_bert_encoding.load_state_dict(
+            torch.load(cfg['aptamer_bert_path'], map_location=cfg['device']
+                )['model_state_dict']
+            )
+        
+        self.linear = nn.Linear(cfg['d_model'], 1)
+        
+    def forward(self, x, attn_mask=None):
+        logits, embed = self.aptamer_bert_encoding(x, attn_mask=attn_mask)
+        
+        x = embed[:, 0, :]
+        
+        return self.linear(x)
 
 class XTransformerEncoder(nn.Module):
     def __init__(self, cfg):
@@ -288,12 +341,16 @@ class XTransformerEncoder(nn.Module):
         self.cfg = cfg
         self.device = cfg['device']
         self.d_model = cfg['d_model']
+        self.tokenizer = AutoTokenizer.from_pretrained(cfg['tokenizer_path'])
+        cfg['num_tokens'] = self.tokenizer.vocab_size
+        cfg['max_seq_len'] = self.tokenizer.model_max_length
         
         self.x_transformer_encoder= TransformerWrapper(
             num_tokens = cfg['num_tokens'],
             max_seq_len = cfg['max_seq_len'],
             num_memory_tokens = cfg['num_memory_tokens'],
             l2norm_embed = cfg['l2norm_embed'],
+            emb_dropout=cfg['dropout_rate'],
             attn_layers = Encoder(
                 dim = cfg['d_model'],
                 depth = cfg['num_layers'],
@@ -308,44 +365,33 @@ class XTransformerEncoder(nn.Module):
                 ff_glu = cfg['ff_glu'],
                 ff_swish = cfg['ff_swish'],
                 ff_no_bias = cfg['ff_no_bias'],
-                attn_talking_heads = cfg['attn_talking_heads']
+                attn_talking_heads = cfg['attn_talking_heads'],
+                attn_gate_values = cfg['attn_gate_values'],
+                macaron = cfg['macaron'],
+                rel_pos_bias = cfg['rel_pos_bias'],
+                rotary_pos_emb = cfg['rotary_pos_emb'],
+                rotary_xpos = cfg['rotary_xpos'],
+                residual_attn = cfg['residual_attn'],
+                pre_norm = cfg['pre_norm'],
+                attn_qk_norm = cfg['attn_qk_norm'],
+                attn_qk_norm_dim_scale = cfg['attn_qk_norm_dim_scale'],
             )
         )
 
     def forward(self, x, attn_mask=None):
-        logits, embed = self.x_transformer_encoder(x, mask=attn_mask, return_logits_and_embeddings=True)
+        logits, embed = self.x_transformer_encoder(x, mask=~attn_mask, return_logits_and_embeddings=True)
         return logits, embed
     
-class XAptamerBert(nn.Module):
+class XTransformerEncoderClassifier(nn.Module):
     def __init__(self, cfg):
-        super(XAptamerBert, self).__init__()
-        self.cfg = cfg
-        self.device = cfg['device']
-        self.d_model = cfg['d_model']
-        
-        os.environ["TOKENIZERS_PARALLELISM"] = 'true'
-
-        self.tokenizer = AutoTokenizer.from_pretrained(cfg['tokenizer_path'])
-        self.data_collator = DataCollatorForLanguageModeling(tokenizer=self.tokenizer,  mlm_probability=cfg['mlm_probability'], return_tensors='pt')
-        
-        self.x_transformer_encoder= XTransformerEncoder(cfg)
-        
-    def forward(self, x, attn_mask=None):
-
-        logits, embed = self.x_transformer_encoder(x, mask=attn_mask, return_logits_and_embeddings=True)
-        
-        return logits, embed
-    
-class AptamerXTransformerEncoderRegression(nn.Module):
-    def __init__(self, cfg):
-        super(AptamerXTransformerEncoderRegression, self).__init__()
+        super(XTransformerEncoderClassifier, self).__init__()
         self.cfg = cfg
         self.device = cfg['device']
         self.d_model = cfg['d_model']
         
         self.x_transformer_encoder= XTransformerEncoder(cfg)
-        self.linear = nn.Linear(self.d_model, 1)
-
+        self.linear = nn.Linear(self.d_model, cfg['num_classes'])
+        
     def forward(self, x, attn_mask=None):
 
         logits, embed = self.x_transformer_encoder(x, attn_mask=attn_mask)
@@ -356,25 +402,20 @@ class AptamerXTransformerEncoderRegression(nn.Module):
 
         return x
     
-        
-class DNAXTransformerEncoder(nn.Module):
+class XTransformerEncoderEvidence(nn.Module):
     def __init__(self, cfg):
-        super(DNAXTransformerEncoder, self).__init__()
+        super(XTransformerEncoderEvidence, self).__init__()
         self.cfg = cfg
         self.device = cfg['device']
         self.d_model = cfg['d_model']
+        self.n_classes = cfg['num_classes']
         
         self.x_transformer_encoder= XTransformerEncoder(cfg)
+        self.linear = nn.Linear(self.d_model, cfg['num_classes'])
         
-        if cfg['model_task'] == 'regression':
-            self.linear = nn.Linear(self.d_model, 1)
-        
-        elif cfg['model_task'] == 'classification' or 'evidence':
-            self.linear = nn.Linear(self.d_model, cfg['num_classes'])
-            
     def forward(self, x, attn_mask=None):
 
-        logits, embed = self.x_transformer_encoder(x, mask=attn_mask)
+        logits, embed = self.x_transformer_encoder(x, attn_mask=attn_mask)
 
         x = embed[:, 0, :]
 
@@ -382,8 +423,8 @@ class DNAXTransformerEncoder(nn.Module):
 
         return x
     
-    def predict_uncertainty(self, input_ids, attention_mask, token_type_ids=None):
-        y_pred = self(input_ids, attention_mask, token_type_ids)
+    def predict_uncertainty(self, input_ids, attn_mask=None):
+        y_pred = self(input_ids, attn_mask=attn_mask)
         
         # dempster-shafer theory
         evidence = relu_evidence(y_pred) # can also try softplus and exp evidence schemes
@@ -396,40 +437,115 @@ class DNAXTransformerEncoder(nn.Module):
         epistemic = prob * (1 - prob) / (S + 1)
         aleatoric = prob - prob**2 - epistemic
         return prob, u, aleatoric, epistemic
-
-
-class FullDNAXTransformer(nn.Module):
+    
+class XTransformerEncoderRegression(nn.Module):
     def __init__(self, cfg):
-        super(FullDNAXTransformer, self).__init__()
+        super(XTransformerEncoderRegression, self).__init__()
         self.cfg = cfg
         self.device = cfg['device']
         self.d_model = cfg['d_model']
-
-        self.x_transformer = XTransformer(
-            dim = cfg['d_model'],
-            tie_token_emb = False,
-            return_tgt_loss = True,
-            enc_num_tokens=cfg['num_tokens'],
-            enc_depth = 3,
-            enc_heads = 8,
-            enc_max_seq_len = cfg['max_seq_len'],
-            dec_num_tokens = cfg['num_classes'],
-            dec_depth = 3,
-            dec_heads = 8,
-            dec_max_seq_len = 2
-        )
         
-    def forward(self, x, y, len_x, scr_mask=None):
-        self.batch_size, self.seq_len = x.shape
+        self.x_transformer_encoder= XTransformerEncoder(cfg)
+        self.linear = nn.Linear(self.d_model, 1)
         
-        scr_mask = self.create_mask(len_x)
+    def forward(self, x, attn_mask=None):
 
-        x = self.x_transformer(x, y, mask=scr_mask)
+        logits, embed = self.x_transformer_encoder(x, attn_mask=attn_mask)
+
+        x = embed[:, 0, :]
+
+        x = self.linear(x)
 
         return x
     
-    def create_mask(self, len_x):
-        mask_pad = torch.zeros(self.batch_size, self.seq_len).bool()
-        for (idx, len_comment) in enumerate(len_x): 
-            mask_pad[idx, len_comment:self.seq_len] = 1
-        return mask_pad.to(self.device)
+
+class XAptamerBert(nn.Module):
+    def __init__(self, cfg):
+        super(XAptamerBert, self).__init__()
+        self.cfg = cfg
+        self.device = cfg['device']
+        self.d_model = cfg['d_model']
+        
+        os.environ["TOKENIZERS_PARALLELISM"] = 'true'
+        
+        self.x_transformer_encoder= XTransformerEncoder(cfg)
+        
+    def forward(self, x, attn_mask=None):
+
+        logits, embed = self.x_transformer_encoder(x, attn_mask=attn_mask)
+        
+        return logits, embed
+    
+
+class XAptamerBertClassifier(nn.Module):
+    def __init__(self, cfg):
+        super(XAptamerBertClassifier, self).__init__()
+
+        self.aptamer_bert_encoding = XAptamerBert(cfg)
+        self.aptamer_bert_encoding.load_state_dict(
+            torch.load(cfg['x_aptamer_bert_path'], map_location=cfg['device']
+                )['model_state_dict']
+            )
+        
+        self.linear = nn.Linear(cfg['d_model'], cfg['num_classes'])
+        
+    def forward(self, x, attn_mask=None):
+        logits, embed = self.aptamer_bert_encoding(x, attn_mask=attn_mask)
+        
+        x = embed[:, 0, :]
+        
+        return self.linear(x)
+    
+class XAptamerBertEvidence(nn.Module):
+    def __init__(self, cfg):
+        super(XAptamerBertEvidence, self).__init__()
+
+        self.aptamer_bert_encoding = XAptamerBert(cfg)
+        self.aptamer_bert_encoding.load_state_dict(
+            torch.load(cfg['x_aptamer_bert_path'], map_location=cfg['device']
+                )['model_state_dict']
+            )
+        
+        self.linear = nn.Linear(cfg['d_model'], cfg['num_classes'])
+        self.n_classes = cfg['num_classes']
+    def forward(self, x, attn_mask=None):
+        logits, embed = self.aptamer_bert_encoding(x, attn_mask=attn_mask)
+        
+        x = embed[:, 0, :]
+        
+        return self.linear(x)
+    
+    def predict_uncertainty(self, input_ids, attn_mask=None):
+        y_pred = self(input_ids, attn_mask=attn_mask)
+        
+        # dempster-shafer theory
+        evidence = relu_evidence(y_pred) # can also try softplus and exp evidence schemes
+        alpha = evidence + 1
+        S = torch.sum(alpha, dim=1, keepdim=True)
+        u = self.n_classes / S
+        prob = alpha / S
+        
+        # law of total uncertainty 
+        epistemic = prob * (1 - prob) / (S + 1)
+        aleatoric = prob - prob**2 - epistemic
+        return prob, u, aleatoric, epistemic
+    
+class XAptamerBertRegression(nn.Module):
+    def __init__(self, cfg):
+        super(XAptamerBertRegression, self).__init__()
+
+        self.aptamer_bert_encoding = XAptamerBert(cfg)
+        self.aptamer_bert_encoding.load_state_dict(
+            torch.load(cfg['x_aptamer_bert_path'], map_location=cfg['device']
+                )['model_state_dict']
+            )
+        
+        self.linear = nn.Linear(cfg['d_model'], 1)
+        
+    def forward(self, x, attn_mask=None):
+        logits, embed = self.aptamer_bert_encoding(x, attn_mask=attn_mask)
+        
+        x = embed[:, 0, :]
+        
+        return self.linear(x)
+    

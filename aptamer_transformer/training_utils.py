@@ -111,6 +111,26 @@ def test_model(model, test_loader, cfg):
     
     return avg_test_loss, test_loss_list
 
+
+def load_checkpoint(model, optimizer, cfg):
+    checkpoint = torch.load(cfg['checkpoint_path'], map_location=cfg['device'])
+    
+    model.load_state_dict(checkpoint['model_state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    starting_epoch = checkpoint['epoch'] + 1
+    
+    loss_file = f'{cfg["results_path"]}/loss_data.json'
+    
+    if os.path.exists(loss_file):
+        with open(loss_file, 'r') as file:
+            loss_dict = json.load(file)
+        
+    if cfg['rank'] == 0:
+        print('Loaded last checkpoint')
+    
+    return model, optimizer, starting_epoch, loss_dict
+    
+
 def checkpointing(epoch, avg_train_loss, avg_val_loss, args, model, optimizer, loss_dict, train_loss_list, val_loss_list, cfg):
     print(f"Epoch: {epoch}, Train Loss: {avg_train_loss}, Validation Loss: {avg_val_loss}")
     
@@ -130,16 +150,24 @@ def checkpointing(epoch, avg_train_loss, avg_val_loss, args, model, optimizer, l
     if not os.path.exists(cfg['results_path']):
         os.mkdir(cfg['results_path'])
     
-    if os.path.exists(cfg['checkpoint_path']):
+    if os.path.exists(cfg['checkpoint_path']) and cfg['load_last_checkpoint'] is False and epoch == 0:
+        os.rename(cfg['checkpoint_path'], cfg['checkpoint_path'] + '.bak' + 'bak')
+
+    elif os.path.exists(cfg['checkpoint_path']):
         os.rename(cfg['checkpoint_path'], cfg['checkpoint_path'] + '.bak')
-        
+
     torch.save(checkpoint, cfg['checkpoint_path'])
                         
-    loss_dict['train_loss'].extend(train_loss_list)
-    loss_dict['val_loss'].extend(val_loss_list)
-    with open(f'{cfg["results_path"]}/loss_data.json', 'w') as f:
-        json.dump(loss_dict, f)
-
+    loss_file = f'{cfg["results_path"]}/loss_data.json'
+    
+    # Append new loss data
+    loss_dict['train_loss'].append(train_loss_list)
+    loss_dict['val_loss'].append(val_loss_list)
+    
+    # Write the updated data back to the file
+    with open(loss_file, 'w') as file:
+        json.dump(loss_dict, file, indent=4)
+        
     return None
 
 

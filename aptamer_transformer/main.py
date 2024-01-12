@@ -7,10 +7,10 @@ from torch.utils.tensorboard import SummaryWriter
 import argparse
 import traceback
 
-from training_utils import train_model, validate_model, test_model, checkpointing
+from training_utils import train_model, validate_model, test_model, checkpointing, load_checkpoint
 from data_utils import load_dataset, get_data_loaders, read_cfg
 from distributed_utils import ddp_setup_process_group
-from factories_model_loss import get_model
+from factories_model_loss import get_model, get_lr_scheduler
 
 
 def parse_arguments():
@@ -29,9 +29,6 @@ def main():
     
     rank, cfg = ddp_setup_process_group(cfg, args.distributed)
 
-    # if rank == 0:
-    #     cfg['writer'] = SummaryWriter(log_dir=cfg['tensorboard_log_path'])
-
     dna_dataset = load_dataset(cfg)
     model = get_model(cfg)
     model.to(cfg['device'])
@@ -39,40 +36,20 @@ def main():
     train_loader, val_loader, test_loader, train_sampler = get_data_loaders(dna_dataset, cfg, args)
     
     optimizer = optim.Adam(model.parameters(), lr=cfg['learning_rate'])
-    if rank == 0:
-        lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, 
-            patience = cfg['lr_patience'], 
-            verbose = True,
-            min_lr = 1.0e-13
-        )
-    else:
-        lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, 
-            patience = cfg['lr_patience'], 
-            verbose = False,
-            min_lr = 1.0e-13
-        )
+    lr_scheduler = get_lr_scheduler(optimizer, cfg)
     
     if cfg['load_last_checkpoint'] is True:
-        
-        checkpoint = torch.load(cfg['checkpoint_path'], map_location=cfg['device'])
-        model.load_state_dict(checkpoint['model_state_dict'])
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        if rank == 0:
-            print('Loaded last checkpoint')
+        model, optimizer, starting_epoch, loss_dict = load_checkpoint(model, optimizer, cfg)
+    else:
+        loss_dict = {'train_loss': [], 'val_loss': []}
+        starting_epoch = 0
     
     if args.distributed:
         model = DistributedDataParallel(model, device_ids=[cfg['device']], find_unused_parameters=True)
         dist.barrier()
 
-
-        # Initialize TensorBoard SummaryWriter
-
     # Training Loop
-    
-    loss_dict = {'train_loss': [], 'val_loss': []}
-    for epoch in range(cfg['num_epochs']):
+    for epoch in range(starting_epoch, cfg['num_epochs'] + starting_epoch):
         cfg['curr_epoch'] = epoch
         
         if args.distributed:
@@ -82,10 +59,6 @@ def main():
             avg_train_loss, train_loss_list = train_model(model, train_loader, optimizer, cfg)
             
             avg_val_loss, val_loss_list = validate_model(model, val_loader, lr_scheduler, cfg)
-            
-            # if cfg['rank'] == 0 and 'writer' in cfg:
-            #     cfg['writer'].add_scalar('Loss/Train', avg_train_loss, epoch)
-            #     cfg['writer'].add_scalar('Loss/Val', avg_val_loss, epoch)
             
         except Exception:
             return print(traceback.format_exc())
@@ -104,7 +77,7 @@ def main():
             print(f"Test Loss: {avg_test_loss}")
             
     except ValueError as e:
-        print(f"Error occurred during testing: {e}")
+        return print(traceback.format_exc())
 
 if __name__ == "__main__":
     main()

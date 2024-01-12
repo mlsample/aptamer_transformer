@@ -18,8 +18,15 @@ def evaluate_classification(y_true, y_pred_probs):
     accuracy = accuracy_score(y_true, y_pred)
     precision, recall, fscore, _ = precision_recall_fscore_support(y_true, y_pred, average='binary')
     c_matrix = confusion_matrix(y_true, y_pred)
+    
+    tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
+    # Calculating CSI
+    try:
+        csi = tp / (tp + fp + fn)
+    except ZeroDivisionError:
+        csi = 0  # Avoid division by zero 
 
-    return accuracy, precision, recall, fscore, c_matrix
+    return accuracy, precision, recall, fscore, c_matrix, csi
 
 def plot_classification_metrics(y_true, y_pred_probs, class_names=None):
     """
@@ -30,7 +37,8 @@ def plot_classification_metrics(y_true, y_pred_probs, class_names=None):
     :param class_names: List of class names for the confusion matrix
     """
     # Use evaluate_classification to calculate metrics and confusion matrix
-    accuracy, precision, recall, fscore, confusion_matrix = evaluate_classification(y_true, y_pred_probs)
+    accuracy, precision, recall, fscore, confusion_matrix, csi = evaluate_classification(y_true, y_pred_probs)
+
 
     # Plot the confusion matrix
     plt.figure(figsize=(8, 6))
@@ -45,28 +53,25 @@ def plot_classification_metrics(y_true, y_pred_probs, class_names=None):
     print(f"Precision: {precision:.4f}")
     print(f"Recall: {recall:.4f}")
     print(f"F1-Score: {fscore:.4f}")
+    print(f"CSI: {csi:.4f}")
 
     plt.show()
 
-def plot_mean_loss(file_path, num_batches):
+def plot_mean_loss(cfg):
     # Read data from JSON file
-    with open(file_path, 'r') as f:
+    with open(f'{cfg["results_path"]}/loss_data.json', 'r') as f:
         loss_data = json.load(f)
 
-    # Helper function to calculate mean loss for every num_batches
-    def mean_loss(loss_list, num_batches):
-        return [np.mean(loss_list[i:i + num_batches]) for i in range(0, len(loss_list), num_batches)]
-
-    # Calculate mean loss
-    train_loss_means = mean_loss(loss_data['train_loss'], num_batches)
-    val_loss_means = mean_loss(loss_data['val_loss'], 48)
+    train_loss_means = [np.mean(batch) if idx>0 else batch[-1] for idx,batch in  enumerate(loss_data['train_loss'])]
+    
+    val_loss_means = [np.mean(batch) if idx>0 else batch[-1] for idx,batch in  enumerate(loss_data['val_loss'])]
 
     # Generate the plot
     plt.figure(figsize=(10, 5))
     plt.plot(train_loss_means, label='Mean Training Loss')
     plt.plot(val_loss_means, label='Mean Validation Loss')
     plt.title('Mean Training and Validation Loss Over Time')
-    plt.xlabel('Every {} Batches'.format(num_batches))
+    plt.xlabel('Epoch')
     plt.ylabel('Mean Loss')
     plt.legend()
     plt.grid(True)

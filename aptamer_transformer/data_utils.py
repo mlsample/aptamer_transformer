@@ -102,6 +102,7 @@ def do_round_weighting(quantile_normed_enrichment_scores):
             counter_obj[seq] *= weight
     return quantile_normed_enrichment_scores
 
+
 def load_and_preprocess_enrichment_data(cfg):
     dfs = read_data_files(cfg)
 
@@ -132,67 +133,178 @@ def load_and_preprocess_enrichment_data(cfg):
 
     return df
 
+def load_strucutre_data(cfg):
+    with open('../data/raw_data/nupack_strucutre_data/mfe.pickle', 'rb') as f:
+        mfe = pickle.load(f)
+    
+    dot_bracket_struc = [mfe[key][0].structure.dotparensplus() for key in mfe.keys()]
+    adjacency_matrix = [mfe[key][0].structure.matrix() for key in mfe.keys()]
+    energy = [mfe[key][0].energy for key in mfe.keys()]
+    
+    struc_df = pd.DataFrame({'dot_bracket_struc': dot_bracket_struc, 'adjacency_matrix': adjacency_matrix, 'energy': energy})
+    
+    return struc_df
+
+def load_seq_and_struc_data(cfg):
+    
+    seq_enrich_df = load_and_preprocess_enrichment_data(cfg)
+    struc_df = load_strucutre_data(cfg)
+    
+    df = pd.concat([seq_enrich_df.reset_index(drop=True), struc_df.reset_index(drop=True)], axis=1)
+
+    return df
+
+
 def load_dataset(cfg):
+    
     if cfg['load_saved_data_set'] is not False:
-        
-        if cfg['model_type'] == 'aptamer_bert':
-            filepath = '../data/pickled/aptamer_bert_dataset.pickle'
-            
-        elif cfg['model_type'] in (
-            'transformer_encoder_classifier',
-            'aptamer_bert_classifier',
-            'aptamer_bert_evidence',
-            'transformer_encoder_evidence'
-            ):
-            filepath = '../data/pickled/encoder_classification_dataset.pickle'
-        
-        elif cfg['model_type'] in (
-            'transformer_encoder_regression',
-            'x_transformer_encoder_regression'
-            ):
-            filepath = '../data/pickled/encoder_regression_dataset.pickle'
-            
-        else:
-            return f'(load_dataset) Invalid model type: {cfg["model_type"]})'
-        
-        with open(filepath, 'rb') as f:
-            dna_dataset = pickle.load(f)
+        dna_dataset = load_saved_data_set(cfg)
             
     else:            
-        df = load_and_preprocess_enrichment_data(cfg)
-             
-        if cfg['model_type'] == 'aptamer_bert':
-            dna_dataset = AptamerBertDataSet(df, cfg)
-        else:
-            dna_dataset = DNAEncoderDataSet(df, cfg)
-
+        df = load_seq_and_struc_data(cfg)
+        
+        dna_dataset = get_pytorch_dataset(df, cfg)
     
     if cfg['save_data_set'] is True:
-
-        if cfg['model_type'] == 'aptamer_bert':
-            filepath = '../data/pickled/aptamer_bert_dataset.pickle'
-            
-        elif cfg['model_type'] in (
-            'transformer_encoder_classifier',
-            'aptamer_bert_classifier',
-            'aptamer_bert_evidence',
-            'transformer_encoder_evidence'
-            ):
-            filepath = '../data/pickled/encoder_classification_dataset.pickle'
-        
-        elif cfg['model_type'] in (
-            'transformer_encoder_regression',
-            'x_transformer_encoder_regression'
-            ):
-            filepath = '../data/pickled/encoder_regression_dataset.pickle'
-            
-        else:
-            raise ValueError(f'(load_dataset) Invalid model type: {cfg["model_type"]})')
-        
-        with open(filepath, 'wb') as f:
-            pickle.dump(dna_dataset, f, pickle.HIGHEST_PROTOCOL)
+        save_data_set_as_pickle(dna_dataset, cfg)
         
     return dna_dataset
+
+def get_pytorch_dataset(df, cfg):
+    if cfg['model_type'] in (
+        'aptamer_bert',
+        'x_aptamer_bert'
+        ):
+        dna_dataset = AptamerBertDataSet(df, cfg)
+        
+    elif cfg['model_type'] in (
+        'dot_bracket_transformer_encoder_classifier'
+        ):
+        dna_dataset = StructEncoderDataSet(df, cfg)
+        
+    else:
+        dna_dataset = DNAEncoderDataSet(df, cfg)
+    
+    return dna_dataset
+
+def load_saved_data_set(cfg):
+    ###########################
+    # Masked Language Models
+    ###########################
+    if cfg['model_type'] in (
+        'aptamer_bert',
+        'x_aptamer_bert'
+        ):
+        filepath = '../data/pickled/aptamer_bert_dataset.pickle'
+    
+    #######################################
+    # Classification and Evidence Models
+    #######################################
+    elif cfg['model_type'] in (
+        'transformer_encoder_classifier',
+        'transformer_encoder_evidence',
+        'aptamer_bert_classifier',
+        'aptamer_bert_evidence',
+        'x_transformer_encoder_classifier',
+        'x_transformer_encoder_evidence',
+        'x_aptamer_bert_classifier',
+        'x_aptamer_bert_evidence',
+        ):
+        filepath = '../data/pickled/encoder_classification_dataset.pickle'
+    
+    #########################
+    # Regression Models
+    #########################
+    elif cfg['model_type'] in (
+        'transformer_encoder_regression',
+        'aptamer_bert_regression',
+        'x_transformer_encoder_regression',
+        'x_aptamer_bert_regression'
+        ):
+        filepath = '../data/pickled/encoder_regression_dataset.pickle'
+        
+        
+    else:
+        return f'(load_dataset) Invalid model type: {cfg["model_type"]})'
+    
+    with open(filepath, 'rb') as f:
+        dna_dataset = pickle.load(f)
+            
+    return dna_dataset
+
+
+def save_data_set_as_pickle(dna_dataset, cfg):
+    ###########################
+    # Masked Language Models
+    ###########################
+    if cfg['model_type'] in (
+        'aptamer_bert',
+        'x_aptamer_bert'
+        ):
+        filepath = '../data/pickled/aptamer_bert_dataset.pickle'
+    
+    #######################################
+    # Classification and Evidence Models
+    #######################################
+    elif cfg['model_type'] in (
+        'transformer_encoder_classifier',
+        'transformer_encoder_evidence',
+        'aptamer_bert_classifier',
+        'aptamer_bert_evidence',
+        'x_transformer_encoder_classifier',
+        'x_transformer_encoder_evidence'
+        'x_aptamer_bert_classifier',
+        'x_aptamer_bert_evidence',
+        ):
+        filepath = '../data/pickled/encoder_classification_dataset.pickle'
+    
+    #########################
+    # Regression Models
+    #########################
+    elif cfg['model_type'] in (
+        'transformer_encoder_regression',
+        'aptamer_bert_regression',
+        'x_transformer_encoder_regression',
+        'x_aptamer_bert_regression'
+        ):
+        filepath = '../data/pickled/encoder_regression_dataset.pickle'
+        
+    else:
+        raise ValueError(f'(load_dataset) Invalid model type: {cfg["model_type"]})')
+    
+    with open(filepath, 'wb') as f:
+        pickle.dump(dna_dataset, f, pickle.HIGHEST_PROTOCOL)
+    
+    return None
+
+
+def get_data_loaders(dna_dataset, cfg, args):
+    train_size = int(0.7 * len(dna_dataset))
+    val_size = int(0.15 * len(dna_dataset))
+    test_size = len(dna_dataset) - train_size - val_size
+
+    train_set, val_set, test_set = random_split(dna_dataset, [train_size, val_size, test_size])
+
+    if args.distributed:
+        train_sampler = DistributedSampler(train_set, num_replicas=cfg['world_size'], rank=cfg['rank'], seed=cfg['seed_value'])
+        val_sampler = DistributedSampler(val_set, num_replicas=cfg['world_size'], rank=cfg['rank'], seed=cfg['seed_value'])
+        test_sampler = DistributedSampler(test_set, num_replicas=cfg['world_size'], rank=cfg['rank'], seed=cfg['seed_value'])
+    else:
+        train_sampler = None
+        val_sampler = None
+        test_sampler = None
+
+    train_loader = DataLoader(train_set, batch_size=cfg['batch_size'], sampler=train_sampler, num_workers=cfg['num_workers'])
+    val_loader = DataLoader(val_set, batch_size=cfg['batch_size'], sampler=val_sampler, num_workers=cfg['num_workers'])
+    test_loader = DataLoader(test_set, batch_size=cfg['batch_size'], sampler=test_sampler, num_workers=cfg['num_workers'])
+    
+    return train_loader, val_loader, test_loader, train_sampler
+
+
+##########################################################
+#Deprecated functions
+##########################################################
+
 
 # def load_dataset(cfg):
 #     if cfg['load_saved_data_set'] is not False:
@@ -229,34 +341,6 @@ def load_dataset(cfg):
 #             df.to_hdf('../data/saved_h5/dna_dataset_regression.h5', key='df', mode='w')
         
 #     return dna_dataset
-
-
-def get_data_loaders(dna_dataset, cfg, args):
-    train_size = int(0.7 * len(dna_dataset))
-    val_size = int(0.15 * len(dna_dataset))
-    test_size = len(dna_dataset) - train_size - val_size
-
-    train_set, val_set, test_set = random_split(dna_dataset, [train_size, val_size, test_size])
-
-    if args.distributed:
-        train_sampler = DistributedSampler(train_set, num_replicas=cfg['world_size'], rank=cfg['rank'], seed=cfg['seed_value'])
-        val_sampler = DistributedSampler(val_set, num_replicas=cfg['world_size'], rank=cfg['rank'], seed=cfg['seed_value'])
-        test_sampler = DistributedSampler(test_set, num_replicas=cfg['world_size'], rank=cfg['rank'], seed=cfg['seed_value'])
-    else:
-        train_sampler = None
-        val_sampler = None
-        test_sampler = None
-
-    train_loader = DataLoader(train_set, batch_size=cfg['batch_size'], sampler=train_sampler, num_workers=cfg['num_workers'])
-    val_loader = DataLoader(val_set, batch_size=cfg['batch_size'], sampler=val_sampler, num_workers=cfg['num_workers'])
-    test_loader = DataLoader(test_set, batch_size=cfg['batch_size'], sampler=test_sampler, num_workers=cfg['num_workers'])
-    
-    return train_loader, val_loader, test_loader, train_sampler
-
-
-##########################################################
-#Deprecated functions
-##########################################################
 
 def count_one_nucleotide_away(dfs):
     """
