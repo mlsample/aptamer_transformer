@@ -1,13 +1,13 @@
 import torch
-import torch.nn.functional as F
+
 from tqdm import tqdm
-import pickle
-from mlguess.torch.class_losses import edl_digamma_loss
-import json
-import torch.distributed as dist
-from factories_model_loss import get_loss_function, compute_loss, compute_model_output
-from metric_utils import *
 import os
+import pickle
+import json
+
+from aptamer_transformer.factories_model_loss import get_loss_function, compute_loss, compute_model_output
+from aptamer_transformer.metric_utils import *
+
 
 def train_model(model, train_loader, optimizer, cfg):
     model.train()

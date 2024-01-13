@@ -2,7 +2,10 @@ import torch
 import torch.nn.functional as F
 
 from mlguess.torch.class_losses import edl_digamma_loss
-from model import *
+from aptamer_transformer.model import *
+
+
+
 
 def get_model(cfg):
     ############################
@@ -65,6 +68,7 @@ def get_model(cfg):
     else:
         raise ValueError(f"Invalid model type: {cfg['model_type']}")
     
+ 
 def get_loss_function(cfg):
     ############################
     # Regression Models

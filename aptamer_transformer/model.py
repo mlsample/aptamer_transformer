@@ -77,8 +77,10 @@ class TransformerEncoder(nn.Module):
         self.cfg = cfg
         self.device = cfg['device']
         self.d_model = cfg['d_model']
+        
         self.tokenizer = AutoTokenizer.from_pretrained(cfg['tokenizer_path'])
         cfg['num_tokens'] = self.tokenizer.vocab_size
+        cfg['max_seq_len'] = self.tokenizer.model_max_length
         
         self.embed = nn.Embedding(cfg['num_tokens'], self.d_model, padding_idx=0)
         self.layers = nn.ModuleList([EncoderLayer(cfg) for _ in range(cfg['num_layers'])])
@@ -112,12 +114,13 @@ class TransformerDecoder(nn.Module):
         super(TransformerDecoder, self).__init__()
         self.cfg = cfg
         self.d_model = cfg['d_model']
+        
         self.tokenizer = AutoTokenizer.from_pretrained(cfg['tokenizer_path'])
         cfg['num_tokens'] = self.tokenizer.vocab_size
+        cfg['max_seq_len'] = self.tokenizer.model_max_length
         
         self.embed = nn.Embedding(cfg['num_tokens'], self.d_model, padding_idx=0)
         self.layers = nn.ModuleList([DecoderLayer(cfg) for _ in range(cfg['num_layers'])])
-        self.linear = nn.Linear(self.d_model, cfg['num_tokens'])
 
     def forward(self, x, enc_output, src_mask, tgt_mask):
         self.batch_size, self.seq_len = x.shape
@@ -128,7 +131,6 @@ class TransformerDecoder(nn.Module):
         for layer in self.layers:
             x = layer(x, enc_output, src_mask, tgt_mask)
 
-        x = self.linear(x)
         return x
     
     def get_position_encoding(self, seq_len, d_model):

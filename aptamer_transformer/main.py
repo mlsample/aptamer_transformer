@@ -7,10 +7,10 @@ from torch.utils.tensorboard import SummaryWriter
 import argparse
 import traceback
 
-from training_utils import train_model, validate_model, test_model, checkpointing, load_checkpoint
-from data_utils import load_dataset, get_data_loaders, read_cfg
-from distributed_utils import ddp_setup_process_group
-from factories_model_loss import get_model, get_lr_scheduler
+from aptamer_transformer.training_utils import train_model, validate_model, test_model, checkpointing, load_checkpoint
+from aptamer_transformer.data_utils import load_dataset, get_data_loaders, read_cfg
+from aptamer_transformer.distributed_utils import ddp_setup_process_group
+from aptamer_transformer.factories_model_loss import get_model, get_lr_scheduler
 
 
 def parse_arguments():

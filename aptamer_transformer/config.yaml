@@ -7,7 +7,7 @@ results_path: '{WORKING_DIR}/results/{MODEL_TYPE}'
 tensorboard_log_path: '{WORKING_DIR}/results/{MODEL_TYPE}/'
 
 #model
-model_type: "dot_bracket_transformer_encoder_classifier"  
+model_type: "transformer_encoder_classifier"  
 
 # transformer_encoder_regression
 # transformer_encoder_classifier
@@ -77,7 +77,7 @@ attn_dropout: 0.1
 ff_dropout: 0.1
 
 #AptamerBERT parameters
-tokenizer_path: '{WORKING_DIR}/data/AptamerBERT_tokenizer'
+tokenizer_path: '{WORKING_DIR}/data/tokenizers/AptamerBERT_tokenizer'
 mlm_probability: 0.15
 aptamer_bert_path: '{WORKING_DIR}/results/aptamer_bert/aptamer_bert_checkpoint.pt'
 #Current aptamer_bert checkpoint parameters are num_layers: 6, d_model: 64, nhead: 8, d_ff: 512, dropout_rate: 0.1  
@@ -89,6 +89,6 @@ n_quantiles: 1000
 round_weighting: False # Only valid if load_saved_data_set is False
 
 save_data_set: False
-load_saved_data_set: False
+load_saved_data_set: True
 debug: False
-data_directory: '{WORKING_DIR}/data/sars-cov2-raw'
+data_directory: '{WORKING_DIR}/data/seq_data/sars-cov2-raw'

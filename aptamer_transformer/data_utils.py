@@ -7,9 +7,11 @@ import yaml
 import pickle
 
 from sklearn.preprocessing import quantile_transform , StandardScaler
-from dataset import *
 from torch.utils.data import DataLoader, random_split
 from torch.utils.data.distributed import DistributedSampler
+
+from aptamer_transformer.dataset import *
+
 
 def read_cfg(args_config):
     # Read the YAML configuration file
@@ -102,6 +104,19 @@ def do_round_weighting(quantile_normed_enrichment_scores):
             counter_obj[seq] *= weight
     return quantile_normed_enrichment_scores
 
+def enrichment_normalization_two(df, cfg):
+    # Using 'assign' to modify 'Normalized_Frequency' and sorting values
+    if cfg['norm_2'] == 'quantile_transform':
+        df = df.assign(
+            Normalized_Frequency=lambda x: quantile_transform(x['Normalized_Frequency'].values.reshape(-1, 1)).reshape(-1)
+        )
+    elif cfg['norm_2'] == 'standard_scaler':
+        scaler = StandardScaler()
+        df = df.assign(
+            Normalized_Frequency=lambda x: scaler.fit_transform(x['Normalized_Frequency'].values.reshape(-1, 1)).reshape(-1)
+        )
+    return df
+
 
 def load_and_preprocess_enrichment_data(cfg):
     dfs = read_data_files(cfg)
@@ -117,24 +132,14 @@ def load_and_preprocess_enrichment_data(cfg):
     combined = sum((Counter(d) for d in quantile_normed_enrichment_scores.values()), Counter())
     df = pd.DataFrame.from_dict(combined, orient='index', columns=['Normalized_Frequency']).reset_index().rename(columns={'index': 'Sequence'})
     
-    if cfg['model_type'] == 'transformer_encoder_classifier':
-        df['Normalized_Frequency'] = df['Normalized_Frequency'].apply(lambda x: 1 if x >= cfg['classification_threshold'] else 0)
-
-    # Using 'assign' to modify 'Normalized_Frequency' and sorting values
-    if cfg['norm_2'] == 'quantile_transform':
-        df = df.assign(
-            Normalized_Frequency=lambda x: quantile_transform(x['Normalized_Frequency'].values.reshape(-1, 1)).reshape(-1)
-        )
-    elif cfg['norm_2'] == 'standard_scaler':
-        scaler = StandardScaler()
-        df = df.assign(
-            Normalized_Frequency=lambda x: scaler.fit_transform(x['Normalized_Frequency'].values.reshape(-1, 1)).reshape(-1)
-        )
+    df = enrichment_normalization_two(df, cfg)
+    
+    df['Discretized_Frequency'] = pd.qcut(df['Normalized_Frequency'], q=cfg['num_classes'], labels=False)
 
     return df
 
 def load_strucutre_data(cfg):
-    with open('../data/raw_data/nupack_strucutre_data/mfe.pickle', 'rb') as f:
+    with open(f'{cfg["working_dir"]}/data/nupack_strucutre_data/mfe.pickle', 'rb') as f:
         mfe = pickle.load(f)
     
     dot_bracket_struc = [mfe[key][0].structure.dotparensplus() for key in mfe.keys()]
@@ -170,22 +175,56 @@ def load_dataset(cfg):
         
     return dna_dataset
 
+
 def get_pytorch_dataset(df, cfg):
+    ###########################
+    # Seq Only Masked Language Models
+    ###########################
     if cfg['model_type'] in (
         'aptamer_bert',
         'x_aptamer_bert'
         ):
         dna_dataset = AptamerBertDataSet(df, cfg)
-        
+    
+    #######################################
+    # Seq Only Classification and Evidence Models
+    #######################################
     elif cfg['model_type'] in (
-        'dot_bracket_transformer_encoder_classifier'
+        'transformer_encoder_classifier',
+        'transformer_encoder_evidence',
+        'aptamer_bert_classifier',
+        'aptamer_bert_evidence',
+        'x_transformer_encoder_classifier',
+        'x_transformer_encoder_evidence',
+        'x_aptamer_bert_classifier',
+        'x_aptamer_bert_evidence',
         ):
-        dna_dataset = StructEncoderDataSet(df, cfg)
+        dna_dataset = SeqClassifierDataset(df, cfg)
+    
+    #########################
+    # Seq Only Regression Models
+    #########################
+    elif cfg['model_type'] in (
+        'transformer_encoder_regression',
+        'aptamer_bert_regression',
+        'x_transformer_encoder_regression',
+        'x_aptamer_bert_regression'
+        ):
+        dna_dataset = SeqRegressionDataset(df, cfg)
+        
+    #######################################
+    # Strucy Only Classification and Evidence Models
+    #######################################
+    elif cfg['model_type'] in (
+        'dot_bracket_transformer_encoder_classifier',
+        ):
+        dna_dataset = StructClassifierDataset(df, cfg)
         
     else:
-        dna_dataset = DNAEncoderDataSet(df, cfg)
+        return f'(load_dataset) Invalid model type: {cfg["model_type"]})'
     
     return dna_dataset
+
 
 def load_saved_data_set(cfg):
     ###########################
@@ -195,7 +234,7 @@ def load_saved_data_set(cfg):
         'aptamer_bert',
         'x_aptamer_bert'
         ):
-        filepath = '../data/pickled/aptamer_bert_dataset.pickle'
+        filepath = f'{cfg["working_dir"]}/data/saved_processed_data/aptamer_bert_dataset.pickle'
     
     #######################################
     # Classification and Evidence Models
@@ -210,7 +249,7 @@ def load_saved_data_set(cfg):
         'x_aptamer_bert_classifier',
         'x_aptamer_bert_evidence',
         ):
-        filepath = '../data/pickled/encoder_classification_dataset.pickle'
+        filepath = f'{cfg["working_dir"]}/data/saved_processed_data/pickled/encoder_classification_dataset.pickle'
     
     #########################
     # Regression Models
@@ -221,8 +260,15 @@ def load_saved_data_set(cfg):
         'x_transformer_encoder_regression',
         'x_aptamer_bert_regression'
         ):
-        filepath = '../data/pickled/encoder_regression_dataset.pickle'
+        filepath = f'{cfg["working_dir"]}/data/saved_processed_data/pickled/encoder_regression_dataset.pickle'
         
+    #######################################
+    # Strucy Only Classification and Evidence Models
+    #######################################
+    elif cfg['model_type'] in (
+        'dot_bracket_transformer_encoder_classifier',
+        ):
+        filepath = f'{cfg["working_dir"]}/data/saved_processed_data/pickled/struct_classification_dataset.pickle'
         
     else:
         return f'(load_dataset) Invalid model type: {cfg["model_type"]})'
@@ -241,7 +287,7 @@ def save_data_set_as_pickle(dna_dataset, cfg):
         'aptamer_bert',
         'x_aptamer_bert'
         ):
-        filepath = '../data/pickled/aptamer_bert_dataset.pickle'
+        filepath = f'{cfg["working_dir"]}/data/saved_processed_data/pickled/aptamer_bert_dataset.pickle'
     
     #######################################
     # Classification and Evidence Models
@@ -256,7 +302,7 @@ def save_data_set_as_pickle(dna_dataset, cfg):
         'x_aptamer_bert_classifier',
         'x_aptamer_bert_evidence',
         ):
-        filepath = '../data/pickled/encoder_classification_dataset.pickle'
+        filepath = f'{cfg["working_dir"]}/data/saved_processed_data/pickled/encoder_classification_dataset.pickle'
     
     #########################
     # Regression Models
@@ -267,7 +313,15 @@ def save_data_set_as_pickle(dna_dataset, cfg):
         'x_transformer_encoder_regression',
         'x_aptamer_bert_regression'
         ):
-        filepath = '../data/pickled/encoder_regression_dataset.pickle'
+        filepath = f'{cfg["working_dir"]}/data/saved_processed_data/pickled/encoder_regression_dataset.pickle'
+        
+    #######################################
+    # Strucy Only Classification and Evidence Models
+    #######################################
+    elif cfg['model_type'] in (
+        'dot_bracket_transformer_encoder_classifier',
+        ):
+        filepath = f'{cfg["working_dir"]}/data/saved_processed_data/pickled/struct_classification_dataset.pickle'
         
     else:
         raise ValueError(f'(load_dataset) Invalid model type: {cfg["model_type"]})')
