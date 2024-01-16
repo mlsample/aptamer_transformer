@@ -88,7 +88,7 @@ norm_2: 'quantile_transform'
 n_quantiles: 1000
 round_weighting: False # Only valid if load_saved_data_set is False
 
-save_data_set: False
-load_saved_data_set: True
+save_data_set: True
+load_saved_data_set: False
 debug: False
 data_directory: '{WORKING_DIR}/data/seq_data/sars-cov2-raw'

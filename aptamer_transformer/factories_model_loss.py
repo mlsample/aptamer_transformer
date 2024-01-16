@@ -3,131 +3,149 @@ import torch.nn.functional as F
 
 from mlguess.torch.class_losses import edl_digamma_loss
 from aptamer_transformer.model import *
+from aptamer_transformer.dataset import *
 
 
+def model_config(cfg):
+    MODEL_CONFIG = {
+        ############################
+        # Regression Models
+        ############################
+        "transformer_encoder_regression": {
+            "class": DNATransformerEncoderRegression,
+            "learning_task": "regression",
+            "dataset_class": SeqRegressionDataset,
+        },
+        "aptamer_bert_regression": {
+            "class": AptamerBertRegression,
+            "learning_task": "regression",
+            "dataset_class": SeqRegressionDataset,
+        },
+        "x_transformer_encoder_regression": {
+            "class": XTransformerEncoderRegression,
+            "learning_task": "regression",
+            "dataset_class": SeqRegressionDataset,
+        },
+        "x_aptamer_bert_regression": {
+            "class": XAptamerBertRegression,
+            "learning_task": "regression",
+            "dataset_class": SeqRegressionDataset,
+        },
 
+        ############################
+        # Classification Models
+        ############################
+        "transformer_encoder_classifier": {
+            "class": DNATransformerEncoderClassifier,
+            "learning_task": "classifier",
+            "dataset_class": SeqClassifierDataset,
+        },
+        "dot_bracket_transformer_encoder_classifier": {
+            "class": DotBracketTransformerEncoderClassifier,
+            "learning_task": "classifier",
+            "dataset_class": SeqClassifierDataset,
+        },
+        "aptamer_bert_classifier": {
+            "class": AptamerBertClassifier,
+            "learning_task": "classifier",
+            "dataset_class": SeqClassifierDataset,
+        },
+        "x_transformer_encoder_classifier": {
+            "class": XTransformerEncoderClassifier,
+            "learning_task": "classifier",
+            "dataset_class": SeqClassifierDataset,
+        },
+        "x_aptamer_bert_classifier": {
+            "class": XAptamerBertClassifier,
+            "learning_task": "classifier",
+            "dataset_class": SeqClassifierDataset,
+        },
+        ############################
+        # Evidence Models
+        ############################
+        "transformer_encoder_evidence": {
+            "class": DNATransformerEncoderEvidence,
+            "learning_task": "evidence",
+            "dataset_class": SeqClassifierDataset,
+        },
+        "aptamer_bert_evidence": {
+            "class": AptamerBertEvidence,
+            "learning_task": "evidence",
+            "dataset_class": SeqClassifierDataset,
+        },
+        "x_transformer_encoder_evidence": {
+            "class": XTransformerEncoderEvidence,
+            "learning_task": "evidence",
+            "dataset_class": SeqClassifierDataset,
+        },
+        "x_aptamer_bert_evidence": {
+            "class": XAptamerBertEvidence,
+            "learning_task": "evidence",
+            "dataset_class": SeqClassifierDataset,
+        },
 
-def get_model(cfg):
-    ############################
-    # Transformer Encoder Models
-    ############################
-    if cfg['model_type'] == "transformer_encoder_classifier":
-        return DNATransformerEncoderClassifier(cfg)
+        ############################
+        # Masked Language Models
+        ############################
+        "aptamer_bert": {
+            "class": AptamerBert,
+            "learning_task": "masked_language_model",
+            "dataset_class": SeqBertDataSet,
+        },
+        "x_aptamer_bert": {
+            "class": XAptamerBert,
+            "learning_task": "masked_language_model",
+            "dataset_class": SeqBertDataSet,
+        }
+        
+    }
     
-    elif cfg['model_type'] == "transformer_encoder_regression":
-        return DNATransformerEncoderRegression(cfg)
-    
-    elif cfg['model_type'] == "transformer_encoder_evidence":
-        return DNATransformerEncoderEvidence(cfg)
-    
-    elif cfg['model_type'] == "dot_bracket_transformer_encoder_classifier":
-        return DotBracketTransformerEncoderClassifier(cfg)
-    
-    ############################
-    # Aptamer BERT Models
-    ############################
-    elif cfg['model_type'] == "aptamer_bert":
-        return AptamerBert(cfg)
-    
-    elif cfg['model_type'] == "aptamer_bert_classifier":
-        return AptamerBertClassifier(cfg)
-    
-    elif cfg['model_type'] == "aptamer_bert_evidence":
-        return AptamerBertEvidence(cfg)
-    
-    elif cfg['model_type'] == "aptamer_bert_regression":
-        return AptamerBertRegression(cfg)
-
-    ############################
-    # X Transformer Encoder Models
-    ############################
-    elif cfg['model_type'] == "x_transformer_encoder_regression":
-        return XTransformerEncoderRegression(cfg)
-    
-    elif cfg['model_type'] == "x_transformer_encoder_classifier":
-        return XTransformerEncoderClassifier(cfg)
-    
-    elif cfg['model_type'] == "x_transformer_encoder_evidence":
-        return XTransformerEncoderEvidence(cfg)
-    
-    ############################
-    # X Aptamer BERT Models
-    ############################
-    elif cfg['model_type'] == "x_aptamer_bert":
-        return XAptamerBert(cfg)
-    
-    elif cfg['model_type'] == "x_aptamer_bert_classifier":
-        return XAptamerBertClassifier(cfg)
-    
-    elif cfg['model_type'] == "x_aptamer_bert_evidence":
-        return XAptamerBertEvidence(cfg)
-    
-    elif cfg['model_type'] == "x_aptamer_bert_regression":
-        return XAptamerBertRegression(cfg)
-
+    if cfg['model_type'] in MODEL_CONFIG:
+        cfg['model_config'] = MODEL_CONFIG[cfg['model_type']]
     else:
         raise ValueError(f"Invalid model type: {cfg['model_type']}")
     
+    return cfg
+
+def get_model(cfg):
+    model_config = cfg['model_config']
+    if 'class' in model_config:
+        model_class = model_config["class"]
+        return model_class(cfg)
+    else:
+        raise ValueError(f"Invalid model config: {model_config}")
+    
  
 def get_loss_function(cfg):
+    learning_task = cfg['model_config']['learning_task']
+    
     ############################
     # Regression Models
     ############################
-    if cfg['model_type'] in (
-        'transformer_encoder_regression',
-        'aptamer_bert_regression',
-        'x_transformer_encoder_regression',
-        'x_aptamer_bert_regression'
-        ):
+    if learning_task == 'regression':
         return F.mse_loss
     
     ###############################################
     # Classification and Masked Language Models
     ###############################################
-    elif cfg['model_type'] in (
-        'transformer_encoder_classifier',
-        'dot_bracket_transformer_encoder_classifier',
-        'aptamer_bert_classifier',
-        'x_transformer_encoder_classifier',
-        'x_aptamer_bert_classifier',
-        'aptamer_bert',
-        'x_aptamer_bert'
-        ):
+    elif learning_task in ('classifier', 'masked_language_model'):
         return F.cross_entropy
     
     ############################
     # Evidence Models
     ############################
-    elif cfg['model_type'] in (
-        'aptamer_bert_evidence',
-        'transformer_encoder_evidence',
-        'x_transformer_encoder_evidence',
-        'x_aptamer_bert_evidence'
-        ):
+    elif learning_task == 'evidence':
         return edl_digamma_loss
 
     else:
-        raise ValueError(f"Unknown loss function: {cfg['model_type']}")
+        raise ValueError(f"Invalid learning task: {learning_task}")
 
 def compute_model_output(model, model_inputs, cfg):
+    learning_task = cfg['model_config']['learning_task']
     ####################################################
     # Classification, Evidence, and Regression Models
     ####################################################
-    if cfg['model_type'] in (
-        'transformer_encoder_classifier',
-        'transformer_encoder_evidence',
-        'transformer_encoder_regression',
-        'dot_bracket_transformer_encoder_classifier',
-        'aptamer_bert_classifier',
-        'aptamer_bert_evidence',
-        'aptamer_bert_regression',
-        'x_transformer_encoder_classifier',
-        'x_transformer_encoder_evidence',
-        'x_transformer_encoder_regression',
-        'x_aptamer_bert_classifier',
-        'x_aptamer_bert_evidence',
-        'x_aptamer_bert_regression',
-        ):
+    if learning_task in ('classifier', 'evidence', 'regression'):
         
         tokenized_seqs = model_inputs[0].to(cfg['device'])
         attn_mask = model_inputs[1].bool()
@@ -139,10 +157,8 @@ def compute_model_output(model, model_inputs, cfg):
     ############################
     # Masked Language Models
     ############################
-    elif cfg['model_type'] in (
-        'aptamer_bert',
-        'x_aptamer_bert'
-        ):
+    elif learning_task == 'masked_language_model':
+        
         tokenizer = AutoTokenizer.from_pretrained(cfg['tokenizer_path'])
         data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer,  mlm_probability=cfg['mlm_probability'])
         
@@ -159,18 +175,15 @@ def compute_model_output(model, model_inputs, cfg):
         return output
     
     else:
-        raise ValueError(f"Invalid model type: {cfg['model_type']}")
+        raise ValueError(f"Invalid learning task: {learning_task}")
 
 def compute_loss(loss_function, output, target, cfg):
+    learning_task = cfg['model_config']['learning_task']
+    
     ############################
     # Evidence Models
     ############################
-    if cfg['model_type'] in (
-        'aptamer_bert_evidence',
-        'transformer_encoder_evidence',
-        'x_transformer_encoder_evidence',
-        'x_aptamer_bert_evidence'
-        ):
+    if learning_task == 'evidence':
         annealing_coefficient = 10
         target_hot = F.one_hot(target.long(), cfg['num_classes'])
         return loss_function(output, target_hot, cfg['curr_epoch'], cfg['num_classes'], annealing_coefficient, device=cfg['device']) 
@@ -178,41 +191,25 @@ def compute_loss(loss_function, output, target, cfg):
     ############################
     # Classification Models
     ############################
-    elif cfg['model_type'] in (
-        
-        'transformer_encoder_classifier',
-        'aptamer_bert_classifier',
-        'dot_bracket_transformer_encoder_classifier',
-        'x_transformer_encoder_classifier',
-        'x_aptamer_bert_classifier',
-        
-        ):
+    elif learning_task == 'classifier':
         return loss_function(output, target.long().to(cfg['device']))
     
     ############################
     # Regression Models
     ############################
-    elif cfg['model_type'] in (
-        'transformer_encoder_regression',
-        'aptamer_bert_regression',
-        'x_transformer_encoder_regression',
-        'x_aptamer_bert_regression'
-        ):
+    elif learning_task == 'regression':
         return loss_function(output.squeeze(), target.float().to(cfg['device']))
     
     ############################
     # Masked Language Models
     ############################
-    elif cfg['model_type'] in (
-        'aptamer_bert',
-        'x_aptamer_bert'
-        ):
+    elif learning_task == 'masked_language_model':
         src = output[0]
         tgt = output[2]
         return loss_function(src.movedim(2,1), tgt)
         
     else:
-        raise ValueError(f"Invalid model type: {cfg['model_type']}")
+        raise ValueError(f"Invalid learning task: {learning_task}")
     
     
 def get_lr_scheduler(optimizer, cfg):
