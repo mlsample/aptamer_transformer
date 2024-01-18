@@ -1,3 +1,7 @@
+from echo.src.base_objective import BaseObjective
+import optuna
+
+import numpy as np
 import torch
 import torch.distributed as dist
 from torch import optim
@@ -12,20 +16,38 @@ from aptamer_transformer.data_utils import load_dataset, get_data_loaders, read_
 from aptamer_transformer.distributed_utils import ddp_setup_process_group
 from aptamer_transformer.factories_model_loss import get_model, get_lr_scheduler, model_config
 
-
+class Objective(BaseObjective):
+    def __init__(self, config, metric="val_loss", device="cpu"):
+        # Initialize the base class
+        BaseObjective.__init__(self, config, metric, device)
+    def train(self, trial, conf):
+        try:
+            return main(conf, trial=trial)
+        except Exception as e:
+            if "CUDA" in str(e):
+                optuna.TrialPrune()
+            else:
+                raise print(traceback.format_exc())
+    
+    
 def parse_arguments():
     parser = argparse.ArgumentParser(description='Aptamer occurance regression task')
     parser.add_argument('--config', type=str, default='config.yaml', help='Path to the configuration file')
     parser.add_argument('--distributed', action='store_true', help='Enable distributed training')
     return parser.parse_known_args()[0]
 
-def main():
+def main(cfg, trial=False):
     
     # Parse command-line arguments
     args = parse_arguments()
 
     # Read configuration from YAML file
-    cfg = read_cfg(args.config)
+    cfg = model_config(cfg)
+    working_dir = cfg['working_dir']
+    model_type = cfg['model_type']
+    cfg = {k: v.replace('{WORKING_DIR}', f'{working_dir}') if isinstance(v, str) else v for k, v in cfg.items()}
+    cfg = {k: v.replace('{MODEL_TYPE}', f'{model_type}') if isinstance(v, str) else v for k, v in cfg.items()}
+           
     
     # Set the seed for generating random numbers
     torch.manual_seed(cfg['seed_value'])
@@ -100,7 +122,13 @@ def main():
     except ValueError as e:
         return print(traceback.format_exc())
     
-    return None
+    avg_val_loss = np.mean(np.array(loss_dict['val_loss']), axis=1)
+    
+    best_fold = [
+        i for i, j in enumerate(avg_val_loss) if j == min(avg_val_loss)
+    ][0]
+    
+    return {"val_loss": avg_val_loss[best_fold]}
 
 if __name__ == "__main__":
     main()

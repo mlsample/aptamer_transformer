@@ -7,7 +7,7 @@ results_path: '{WORKING_DIR}/results/{MODEL_TYPE}'
 tensorboard_log_path: '{WORKING_DIR}/results/{MODEL_TYPE}/'
 
 #model
-model_type: "transformer_encoder_classifier"  
+model_type: "transformer_encoder_regression"  
 
 # transformer_encoder_regression
 # transformer_encoder_classifier
@@ -28,11 +28,16 @@ model_type: "transformer_encoder_classifier"
 # x_aptamer_bert_evidence
 # x_aptamer_bert_regression
 
+# struct_transformer_encoder_classifier
+# struct_transformer_encoder_regression
+# seq_struct_transformer_encoder_regression
+# seq_struct_aptamer_bert
+
 #training parameters
-num_epochs: 100
+num_epochs: 1
 seed_value: 41
 batch_size: 4096
-num_workers: 2
+num_workers: 5
 learning_rate: 0.0001
 lr_patience: 6
 lr_scheduler: ReduceLROnPlateau
@@ -57,13 +62,12 @@ ff_swish: False
 ff_no_bias: True
 attn_talking_heads: False
 attn_gate_values: False
-# sandwich_coef: 6
 macaron: False
 
 rel_pos_bias: False
-rotary_pos_emb: True
+rotary_pos_emb: False
 rotary_xpos: False
-alibi_pos_bias: False
+alibi_pos_bias: True
 
 residual_attn: False
 pre_norm: False
@@ -77,18 +81,24 @@ attn_dropout: 0.1
 ff_dropout: 0.1
 
 #AptamerBERT parameters
-tokenizer_path: '{WORKING_DIR}/data/tokenizers/AptamerBERT_tokenizer'
 mlm_probability: 0.15
-aptamer_bert_path: '{WORKING_DIR}/results/aptamer_bert/aptamer_bert_checkpoint.pt'
 #Current aptamer_bert checkpoint parameters are num_layers: 6, d_model: 64, nhead: 8, d_ff: 512, dropout_rate: 0.1  
+aptamer_bert_path: '{WORKING_DIR}/results/aptamer_bert/aptamer_bert_checkpoint_to_load.pt'
 x_aptamer_bert_path: '{WORKING_DIR}/results/x_aptamer_bert/x_aptamer_bert_checkpoint.pt'
+
+#Tokenizers
+seq_tokenizer_path: '{WORKING_DIR}/data/tokenizers/AptamerBERT_tokenizer'
+dot_bracket_tokenizer_path: '../data/tokenizers/dot_bracket_struct_tokenizer'
+seq_struct_tokenizer_path: '../data/tokenizers/seq_struct_whitespace'
+
 #data parameters
-classification_threshold: 0.9
+# classification_threshold: 0.9
 norm_2: 'quantile_transform'
 n_quantiles: 1000
 round_weighting: False # Only valid if load_saved_data_set is False
 
-save_data_set: True
-load_saved_data_set: False
+save_data_set: False
+load_saved_data_set: True
 debug: False
 data_directory: '{WORKING_DIR}/data/seq_data/sars-cov2-raw'
+load_saved_df: '{WORKING_DIR}/data/saved_processed_data/saved_h5/seq_struct_n_classes_2.pkl'

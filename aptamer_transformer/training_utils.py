@@ -10,40 +10,48 @@ from aptamer_transformer.metric_utils import *
 
 
 def train_model(model, train_loader, optimizer, cfg):
+    # Set the model to training mode
     model.train()
     train_loss_list = []
     total_batches = len(train_loader)
     
+    # Get the loss function from the configuration
     loss_function = get_loss_function(cfg)
     
+    # Initialize a progress bar for training (only for the main process in distributed training)
     if cfg['rank'] == 0:
         pbar = tqdm(total=total_batches)
         update_interval = 2
     
+    # Iterate over each batch in the training data loader
     for batch_idx, (data) in enumerate(train_loader):
         
+        # Separate model inputs and target values
         model_inputs, target = data[:-1], data[-1]
         
+        # Zero the gradients before backward pass
         optimizer.zero_grad()
         model_outputs = compute_model_output(model, model_inputs, cfg)
         
+        # Compute loss and perform backpropagation
         loss = compute_loss(loss_function, model_outputs, target, cfg)
         loss.backward()
         
-        # Apply gradient clipping
+        # Apply gradient clipping to prevent exploding gradients
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
         
+        # Append the loss for this batch
         train_loss_list.append(loss.item())
         
-        if cfg['rank'] == 0:  # Update every 10 batches
-            # Update the progress bar every 'update_interval' steps
+        # Update the progress bar
+        if cfg['rank'] == 0:
             if batch_idx % update_interval == 0 or batch_idx == total_batches - 1:
                 avg_loss = sum(train_loss_list) / len(train_loss_list)
                 pbar.set_description(f"Batch {batch_idx+1}/{total_batches} | Loss: {avg_loss:.4f}")
                 pbar.update(update_interval)
-        
-
+    
+    # Close the progress bar after training
     if cfg['rank'] == 0:
         pbar.close()
     avg_train_loss = sum(train_loss_list) / len(train_loss_list)
@@ -72,8 +80,10 @@ def validate_model(model, val_loader, lr_scheduler, cfg):
             
     avg_val_loss = sum(val_loss_list) / len(val_loss_list)
     lr_scheduler.step(avg_val_loss)
-    # if cfg['rank'] == 0 and 'writer' in cfg:
-    #     compute_classificaion_metrics(y_pred_list, y_true_list, cfg)
+    
+    if cfg['rank'] == 0 and 'writer' in cfg:
+        compute_classificaion_metrics(y_pred_list, y_true_list, cfg)
+    
     return avg_val_loss, val_loss_list
 
 def test_model(model, test_loader, cfg):

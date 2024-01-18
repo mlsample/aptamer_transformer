@@ -1,0 +1,72 @@
+log: True
+save_path: '/glade/u/home/mlsample/work/aptamer_transformer/echo_opt_runs/regression_run_0'
+
+pbs:
+  jobs: 1
+  tasks_per_worker: 1
+  gpus_per_node: 1
+  bash: ["source ~/.bashrc", "module load conda", "conda activate guess"]
+  batch:
+    N: "apt_hyper"
+    l: ["select=1:ncpus=8:ngpus=1:mem=128GB", "walltime=12:00:00", "gpu_type=a100"]
+    A: "NAML0001"
+    q: "casper"
+    o: "./out"
+    e: ./"out"
+    
+optuna:
+  storage: "apt_hyper.db"
+  study_name: "apt_hyper"
+  storage_type: "nfs"
+  objective: "/glade/u/home/mlsample/work/aptamer_transformer/aptamer_transformer/echo_utils.py"
+  direction: "minimize"
+  metric: "val_loss"
+  n_trials: 1000
+  gpu: True
+  sampler:
+    type: "TPESampler"
+    n_startup_trials: 100
+  parameters:
+    learning_rate:
+      type: "loguniform"
+      settings:
+        name: "learning_rate"
+        low: 1.0e-06
+        high: 1.0e-02
+    batch_size:
+      type: "int"
+      settings:
+        name: "batch_size"
+        low: 10
+        high: 10000
+    num_layers:
+      type: "int"
+      settings:
+        name: "num_layers"
+        low: 1
+        high: 12
+    dropout_rate:
+      type: "float"
+      settings:
+        name: "dropout_rate"
+        low: 0.0
+        high: 0.9
+    lr_patience:
+      type: "int"
+      settings:
+        name: "batch_size"
+        low: 1
+        high: 10
+    d_model:
+      type: "int"
+      settings:
+        name: "d_model"
+        low: 8
+        high: 64
+        step: 8
+    d_ff:
+      type: "int"
+      settings:
+        name: "d_ff"
+        low: 8
+        high: 512

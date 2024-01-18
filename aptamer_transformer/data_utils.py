@@ -5,16 +5,30 @@ import numpy as np
 import re
 import yaml
 import pickle
+import warnings
+
+# Filter out UserWarnings raised from sklearn's preprocessing module
+warnings.filterwarnings("ignore", category=UserWarning, module='sklearn.preprocessing._data')
+
 
 from sklearn.preprocessing import quantile_transform , StandardScaler
 from torch.utils.data import DataLoader, random_split
 from torch.utils.data.distributed import DistributedSampler
 
 from aptamer_transformer.dataset import *
+from aptamer_transformer.factories_model_loss import model_config
 
 
 def read_cfg(args_config):
-    # Read the YAML configuration file
+    """
+    Reads the YAML configuration file and returns a dictionary of configurations.
+
+    Parameters:
+    args_config (str): Filepath to the configuration file.
+
+    Returns:
+    dict: Dictionary containing configurations with keys as configuration names and values as configuration values.
+    """
     with open(args_config, 'r') as stream:
         try:
             cfg = yaml.safe_load(stream)
@@ -22,16 +36,23 @@ def read_cfg(args_config):
             model_type = cfg['model_type']
             cfg = {k: v.replace('{WORKING_DIR}', f'{working_dir}') if isinstance(v, str) else v for k, v in cfg.items()}
             cfg = {k: v.replace('{MODEL_TYPE}', f'{model_type}') if isinstance(v, str) else v for k, v in cfg.items()}
-
+            
         except yaml.YAMLError as exc:
             print(exc)
+    
+    cfg =  model_config(cfg)
     
     return cfg
 
 def read_data_files(cfg):
     """
-    Reads all the CSV files in the specified directory and returns a list of dataframes.
-    Each dataframe contains a single column named 'sequence' with the sequences from the corresponding CSV file.
+    Reads all CSV files in the specified directory and returns a dictionary of pandas DataFrames.
+
+    Parameters:
+    cfg (dict): Configuration dictionary with 'data_directory' and 'debug' keys.
+
+    Returns:
+    dict: A dictionary where each key is the filename and the value is a DataFrame containing sequences.
     """
     directory = cfg['data_directory']
     # Get a list of all the CSV files in the directory
@@ -42,7 +63,7 @@ def read_data_files(cfg):
     # Read each CSV file into a dataframe and append it to the list
     if cfg['debug'] is True:
         for idx, file in enumerate(data_path):
-            df = pd.read_csv(file, header=None, names=['sequence'], nrows=10000)
+            df = pd.read_csv(file, header=None, names=['sequence'], nrows=100000)
             dfs[data_files[idx]] = df
     else:
         for idx, file in enumerate(data_path):
@@ -53,6 +74,15 @@ def read_data_files(cfg):
 
 
 def normalized_counters(dfs):
+    """
+    Normalizes the count of sequences in each DataFrame and returns a dictionary of Counters.
+
+    Parameters:
+    dfs (dict): Dictionary of pandas DataFrames, each containing sequences.
+
+    Returns:
+    dict: Dictionary of Counters, each representing normalized counts of sequences.
+    """
     counter_set = {key: Counter(dfs[key]['sequence']) for key in dfs.keys()}
     for counter in counter_set.values():
         total = sum(counter.values(), 0.0)
@@ -61,6 +91,16 @@ def normalized_counters(dfs):
     return counter_set
 
 def get_enrichment(round_1_count, round_2_count):
+    """
+    Calculates the enrichment score for sequences present in both count dictionaries.
+
+    Parameters:
+    round_1_count (Counter): Counter object with sequence counts from a round.
+    round_2_count (Counter): Counter object with sequence counts from another round.
+
+    Returns:
+    dict: Dictionary with sequences as keys and their enrichment scores as values.
+    """
     enrichment = {}
     for seq_key in round_1_count.keys():
         if seq_key in round_2_count:
@@ -68,6 +108,15 @@ def get_enrichment(round_1_count, round_2_count):
     return enrichment
 
 def all_enrichments(counter_set):
+    """
+    Computes enrichment scores between all pairs of Counter objects in the input dictionary.
+
+    Parameters:
+    counter_set (dict): Dictionary of Counter objects representing sequence counts.
+
+    Returns:
+    dict: Dictionary with tuples of Counter object names as keys and enrichment score dictionaries as values.
+    """
     enrichment_scores = {}
     processed_pairs = set()
     for k, v in counter_set.items():
@@ -76,9 +125,21 @@ def all_enrichments(counter_set):
                 enrichment_scores[k, key] = get_enrichment(v, value)
                 processed_pairs.add((k, key))
                 processed_pairs.add((key, k))
+    enrichment_scores = {k: v for k, v in enrichment_scores.items() if len(v) > 0}
+
     return enrichment_scores
 
 def quantile_normed_enrichment(enrichment_scores, cfg):
+    """
+    Applies quantile normalization to enrichment scores.
+
+    Parameters:
+    enrichment_scores (dict): Dictionary of enrichment scores.
+    cfg (dict): Configuration dictionary containing 'n_quantiles' key.
+
+    Returns:
+    dict: Dictionary with quantile-normalized enrichment scores.
+    """
     quantile_normed_enrichment_scores = {}
     for k, v in enrichment_scores.items():
         quantile_normed_enrichment_scores[k] = {}
@@ -92,12 +153,30 @@ def quantile_normed_enrichment(enrichment_scores, cfg):
     return quantile_normed_enrichment_scores
 
 def calculate_weight(key):
+    """
+    Calculates the logarithmic mean of 'R' numbers extracted from the input key.
+
+    Parameters:
+    key (str): Key string containing 'R' numbers.
+
+    Returns:
+    float: Logarithmic mean of the 'R' numbers.
+    """
     # Extracting 'R' numbers and converting them to integers
     r_numbers = [int(part.split('_R')[-1].split('.')[0]) for part in key]
     # Calculating the mean and then the logarithm of the mean
     return np.log(np.mean(r_numbers))
 
 def do_round_weighting(quantile_normed_enrichment_scores):
+    """
+    Applies round weighting to quantile-normalized enrichment scores.
+
+    Parameters:
+    quantile_normed_enrichment_scores (dict): Dictionary with quantile-normalized enrichment scores.
+
+    Returns:
+    dict: Dictionary with weighted enrichment scores.
+    """
     for key, counter_obj in quantile_normed_enrichment_scores.items():
         weight = calculate_weight(key)
         for seq in counter_obj:
@@ -105,6 +184,16 @@ def do_round_weighting(quantile_normed_enrichment_scores):
     return quantile_normed_enrichment_scores
 
 def enrichment_normalization_two(df, cfg):
+    """
+    Applies a second round of normalization to the combined enrichment data.
+
+    Parameters:
+    df (DataFrame): DataFrame containing enrichment data.
+    cfg (dict): Configuration dictionary with 'norm_2' key.
+
+    Returns:
+    DataFrame: DataFrame with normalized enrichment data.
+    """
     # Using 'assign' to modify 'Normalized_Frequency' and sorting values
     if cfg['norm_2'] == 'quantile_transform':
         df = df.assign(
@@ -119,6 +208,15 @@ def enrichment_normalization_two(df, cfg):
 
 
 def load_and_preprocess_enrichment_data(cfg):
+    """
+    Loads and preprocesses enrichment data based on the provided configuration.
+
+    Parameters:
+    cfg (dict): Configuration dictionary.
+
+    Returns:
+    DataFrame: DataFrame with preprocessed enrichment data.
+    """
     dfs = read_data_files(cfg)
 
     counter_set = normalized_counters(dfs)
@@ -139,6 +237,15 @@ def load_and_preprocess_enrichment_data(cfg):
     return df
 
 def load_strucutre_data(cfg):
+    """
+    Loads structure data from a specified file.
+
+    Parameters:
+    cfg (dict): Configuration dictionary with 'working_dir' key.
+
+    Returns:
+    DataFrame: DataFrame containing structure data.
+    """
     with open(f'{cfg["working_dir"]}/data/nupack_strucutre_data/mfe.pickle', 'rb') as f:
         mfe = pickle.load(f)
     
@@ -151,9 +258,20 @@ def load_strucutre_data(cfg):
     return struc_df
 
 def load_seq_and_struc_data(cfg):
-    
+    """
+    Loads and merges sequence and structure data.
+
+    Parameters:
+    cfg (dict): Configuration dictionary.
+
+    Returns:
+    DataFrame: DataFrame containing merged sequence and structure data.
+    """
     seq_enrich_df = load_and_preprocess_enrichment_data(cfg)
     struc_df = load_strucutre_data(cfg)
+    
+    if cfg['debug'] is True:
+        struc_df = struc_df.iloc[:len(seq_enrich_df)]
     
     df = pd.concat([seq_enrich_df.reset_index(drop=True), struc_df.reset_index(drop=True)], axis=1)
 
@@ -161,9 +279,22 @@ def load_seq_and_struc_data(cfg):
 
 
 def load_dataset(cfg):
+    """
+    Loads the dataset based on the provided configuration,
+    either from preprocessed data or by generating a new dataset.
     
+    Parameters:
+    cfg (dict): Configuration dictionary with keys for dataset loading and preprocessing options.
+
+    Returns:
+    object: A PyTorch dataset object.
+    """
     if cfg['load_saved_data_set'] is not True:
-        df = load_seq_and_struc_data(cfg)
+        if cfg['load_saved_df'] is not False:
+            df = pd.read_pickle(cfg['load_saved_df'])
+        else:
+            df = load_seq_and_struc_data(cfg)
+        
         dna_dataset = get_pytorch_dataset(df, cfg)
     else:            
         dna_dataset = load_saved_data_set(cfg)
@@ -171,10 +302,23 @@ def load_dataset(cfg):
     if cfg['save_data_set'] is True:
         save_data_set_as_pickle(dna_dataset, cfg)
         
+    cfg['num_tokens'] = dna_dataset.tokenizer.vocab_size
+    cfg['max_seq_len'] = dna_dataset.tokenizer.model_max_length
+        
     return dna_dataset
 
 
 def get_pytorch_dataset(df, cfg):
+    """
+    Retrieves a PyTorch dataset based on the provided DataFrame and configuration.
+
+    Parameters:
+    df (DataFrame): DataFrame containing the dataset.
+    cfg (dict): Configuration dictionary with 'model_config' key.
+
+    Returns:
+    object: A PyTorch dataset object.
+    """
     model_config = cfg['model_config']
     if "dataset_class" in model_config:
         dataset_class = model_config['dataset_class']
@@ -183,6 +327,15 @@ def get_pytorch_dataset(df, cfg):
         raise ValueError(f"Invalid dataset_class in model_config: {model_config}")
 
 def load_saved_data_set(cfg):
+    """
+    Loads a saved dataset from a pickle file specified in the configuration.
+
+    Parameters:
+    cfg (dict): Configuration dictionary with 'model_config' key.
+
+    Returns:
+    object: A PyTorch dataset object loaded from the pickle file.
+    """
     model_config = cfg['model_config']
     if "dataset_class" in model_config:
         dataset_class = model_config['dataset_class']
@@ -197,6 +350,16 @@ def load_saved_data_set(cfg):
         
 
 def save_data_set_as_pickle(dna_dataset, cfg):
+    """
+    Saves a dataset as a pickle file based on the provided configuration.
+
+    Parameters:
+    dna_dataset (object): A PyTorch dataset object to be saved.
+    cfg (dict): Configuration dictionary with 'model_config' key.
+
+    Returns:
+    None: The function saves the dataset and does not return a value.
+    """
     model_config = cfg['model_config']
     if "dataset_class" in model_config:
         dataset_class = model_config['dataset_class']
@@ -211,6 +374,17 @@ def save_data_set_as_pickle(dna_dataset, cfg):
 
 
 def get_data_loaders(dna_dataset, cfg, args):
+    """
+    Splits the dataset into training, validation, and test sets and creates data loaders for each.
+
+    Parameters:
+    dna_dataset (object): A PyTorch dataset object.
+    cfg (dict): Configuration dictionary with keys for data loader configuration.
+    args (object): Argument object with 'distributed' key.
+
+    Returns:
+    tuple: A tuple containing DataLoader objects for the training, validation, and test sets, and the train sampler.
+    """
     train_size = int(0.7 * len(dna_dataset))
     val_size = int(0.15 * len(dna_dataset))
     test_size = len(dna_dataset) - train_size - val_size

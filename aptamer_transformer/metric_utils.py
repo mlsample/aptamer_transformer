@@ -174,11 +174,14 @@ def plot_metrics(processed_true, processed_preds):
     return None
 
 def plot_confusion_matrix(processed_true, processed_preds):
-    conf_mat = confusion_matrix(processed_true, processed_preds, labels=np.unique(processed_true))
+    nucleotide ={')': 5, '.': 6, '(': 4, 'G': 9, 'C': 8, 'T': 10, 'A': 7}
+    nucleotide = {v: k for k, v in nucleotide.items()}
+    classes = np.unique(processed_true)
+    conf_mat = confusion_matrix(processed_true, processed_preds, labels=classes)
 
     # Plotting the confusion matrix
     plt.figure(figsize=(8, 6))
-    sns.heatmap(conf_mat, annot=True, fmt='d', cmap='Blues', xticklabels=['A', 'C', 'G', 'T'], yticklabels=['A', 'C', 'G', 'T'])
+    sns.heatmap(conf_mat, annot=True, fmt='d', cmap='Blues', xticklabels=nucleotide.values(), yticklabels=nucleotide.values())
     plt.title('Confusion Matrix')
     plt.xlabel('Predicted Labels')
     plt.ylabel('True Labels')
@@ -186,14 +189,15 @@ def plot_confusion_matrix(processed_true, processed_preds):
 
     return None
 
-def per_token_metrics(processed_true, processed_preds):
+def per_token_metrics(processed_true, processed_preds, tokenizer):
     """
     Calculate and print per-token accuracy, sensitivity, and specificity.
     Args:
     - processed_true (np.array): True labels.
     - processed_preds (np.array): Predicted labels.
     """
-    nucleotide = {4: 'A', 5: 'C', 6: 'G', 7: 'T'}
+    nucleotide ={')': 5, 'G': 9, '.': 6, '(': 4, 'C': 8, 'T': 10, 'A': 7}
+    nucleotide = {v: k for k, v in nucleotide.items()}
     classes = np.unique(processed_true)
     # Initialize dictionary to hold metrics
     metrics = {}
@@ -265,6 +269,8 @@ def plot_roc_auc_from_logits(masked_logits, processed_true):
     - processed_true (np.array): True labels for the masked positions.
     - classes (np.array): Array of class labels.
     """
+    nucleotide ={')': 5, 'G': 9, '.': 6, '(': 4, 'C': 8, 'T': 10, 'A': 7}
+    nucleotide = {v: k for k, v in nucleotide.items()}
     classes = np.unique(processed_true)
     # Apply softmax to convert logits to probabilities
     probabilities = softmax(masked_logits, axis=1)

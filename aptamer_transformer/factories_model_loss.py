@@ -31,6 +31,16 @@ def model_config(cfg):
             "learning_task": "regression",
             "dataset_class": SeqRegressionDataset,
         },
+        "struct_transformer_encoder_regression": {
+            "class": StructTransformerEncoderRegression,
+            "learning_task": "regression",
+            "dataset_class": StructRegressionDataset,
+        },
+        'seq_struct_transformer_encoder_regression': {
+            "class": SeqStructTransformerEncoderRegression,
+            "learning_task": "regression",
+            "dataset_class": SeqStructRegressionDataSet,
+        },
 
         ############################
         # Classification Models
@@ -40,10 +50,10 @@ def model_config(cfg):
             "learning_task": "classifier",
             "dataset_class": SeqClassifierDataset,
         },
-        "dot_bracket_transformer_encoder_classifier": {
-            "class": DotBracketTransformerEncoderClassifier,
+        "struct_transformer_encoder_classifier": {
+            "class": StructTransformerEncoderClassifier,
             "learning_task": "classifier",
-            "dataset_class": SeqClassifierDataset,
+            "dataset_class": StructClassifierDataset,
         },
         "aptamer_bert_classifier": {
             "class": AptamerBertClassifier,
@@ -96,12 +106,18 @@ def model_config(cfg):
             "class": XAptamerBert,
             "learning_task": "masked_language_model",
             "dataset_class": SeqBertDataSet,
-        }
+        },
+        "seq_struct_aptamer_bert": {
+            "class": SeqStructAptamerBert,
+            "learning_task": "masked_language_model",
+            "dataset_class": SeqStructBertDataSet,
+        },
         
     }
     
     if cfg['model_type'] in MODEL_CONFIG:
         cfg['model_config'] = MODEL_CONFIG[cfg['model_type']]
+        
     else:
         raise ValueError(f"Invalid model type: {cfg['model_type']}")
     
@@ -159,7 +175,7 @@ def compute_model_output(model, model_inputs, cfg):
     ############################
     elif learning_task == 'masked_language_model':
         
-        tokenizer = AutoTokenizer.from_pretrained(cfg['tokenizer_path'])
+        tokenizer = AutoTokenizer.from_pretrained(cfg['seq_struct_tokenizer_path'])
         data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer,  mlm_probability=cfg['mlm_probability'])
         
         tokenized_data = tokenizer(model_inputs[0], padding=True)

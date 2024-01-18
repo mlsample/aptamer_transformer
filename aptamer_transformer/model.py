@@ -77,11 +77,7 @@ class TransformerEncoder(nn.Module):
         self.cfg = cfg
         self.device = cfg['device']
         self.d_model = cfg['d_model']
-        
-        self.tokenizer = AutoTokenizer.from_pretrained(cfg['tokenizer_path'])
-        cfg['num_tokens'] = self.tokenizer.vocab_size
-        cfg['max_seq_len'] = self.tokenizer.model_max_length
-        
+
         self.embed = nn.Embedding(cfg['num_tokens'], self.d_model, padding_idx=0)
         self.layers = nn.ModuleList([EncoderLayer(cfg) for _ in range(cfg['num_layers'])])
         
@@ -115,10 +111,6 @@ class TransformerDecoder(nn.Module):
         self.cfg = cfg
         self.d_model = cfg['d_model']
         
-        self.tokenizer = AutoTokenizer.from_pretrained(cfg['tokenizer_path'])
-        cfg['num_tokens'] = self.tokenizer.vocab_size
-        cfg['max_seq_len'] = self.tokenizer.model_max_length
-        
         self.embed = nn.Embedding(cfg['num_tokens'], self.d_model, padding_idx=0)
         self.layers = nn.ModuleList([DecoderLayer(cfg) for _ in range(cfg['num_layers'])])
 
@@ -146,9 +138,10 @@ class TransformerDecoder(nn.Module):
                     pos_enc[pos, i] = np.cos(theta)
         return torch.FloatTensor(pos_enc)
 
-class DNATransformerEncoderClassifier(nn.Module):
+
+class TransformerEncoderClassifier(nn.Module):
     def __init__(self, cfg):
-        super(DNATransformerEncoderClassifier, self).__init__()
+        super(TransformerEncoderClassifier, self).__init__()
         self.cfg = cfg
         self.device = cfg['device']
         self.d_model = cfg['d_model']
@@ -165,16 +158,16 @@ class DNATransformerEncoderClassifier(nn.Module):
         
         return x
     
-class DNATransformerEncoderEvidence(nn.Module):
+
+class TransformerEncoderRegression(nn.Module):
     def __init__(self, cfg):
-        super(DNATransformerEncoderEvidence, self).__init__()
+        super(TransformerEncoderRegression, self).__init__()
         self.cfg = cfg
         self.device = cfg['device']
         self.d_model = cfg['d_model']
-        self.n_classes = cfg['num_classes']
         
         self.transformer_encoder = TransformerEncoder(cfg)
-        self.linear = nn.Linear(self.d_model, cfg['num_classes'])
+        self.linear = nn.Linear(self.d_model, 1)
         
     def forward(self, x, attn_mask=None):
         x = self.transformer_encoder(x, attn_mask=attn_mask)
@@ -185,6 +178,8 @@ class DNATransformerEncoderEvidence(nn.Module):
         
         return x
     
+
+class TransformerEncoderEvidence(TransformerEncoderClassifier):
     def predict_uncertainty(self, input_ids, attn_mask=None):
         y_pred = self(input_ids, attn_mask=attn_mask)
         
@@ -199,47 +194,54 @@ class DNATransformerEncoderEvidence(nn.Module):
         epistemic = prob * (1 - prob) / (S + 1)
         aleatoric = prob - prob**2 - epistemic
         return prob, u, aleatoric, epistemic
-    
-class DNATransformerEncoderRegression(nn.Module):
-    def __init__(self, cfg):
-        super(DNATransformerEncoderRegression, self).__init__()
-        self.cfg = cfg
-        self.device = cfg['device']
-        self.d_model = cfg['d_model']
-        
-        self.transformer_encoder = TransformerEncoder(cfg)
-        self.linear = nn.Linear(self.d_model, 1)
-        
-    def forward(self, x, attn_mask=None):
-        
-        x = self.transformer_encoder(x, attn_mask=attn_mask)
 
-        x = x[:, 0, :]
-        
-        x = self.linear(x)
-        
-        return x
+
+class DNATransformerEncoderClassifier(TransformerEncoderClassifier):
+    pass
+
+
+class DNATransformerEncoderEvidence(TransformerEncoderEvidence):
+    pass
     
     
-class DotBracketTransformerEncoderClassifier(nn.Module):
+class DNATransformerEncoderRegression(TransformerEncoderRegression):
+    pass
+    
+    
+class StructTransformerEncoderClassifier(TransformerEncoderClassifier):
+    pass
+    
+
+class StructTransformerEncoderRegression(TransformerEncoderRegression):
+    pass
+    
+    
+class SeqStructTransformerEncoderRegression(TransformerEncoderRegression):
+    pass
+
+    
+class SeqStructAptamerBert(nn.Module):
     def __init__(self, cfg):
-        super(DotBracketTransformerEncoderClassifier, self).__init__()
+        super(SeqStructAptamerBert, self).__init__()
         self.cfg = cfg
         self.device = cfg['device']
         self.d_model = cfg['d_model']
         
+        os.environ["TOKENIZERS_PARALLELISM"] = 'true'
+
+        self.tokenizer = AutoTokenizer.from_pretrained(cfg['seq_struct_tokenizer_path'])
+        self.data_collator = DataCollatorForLanguageModeling(tokenizer=self.tokenizer,  mlm_probability=cfg['mlm_probability'], return_tensors='pt')
+        
         self.transformer_encoder = TransformerEncoder(cfg)
-        self.linear = nn.Linear(self.d_model, cfg['num_classes'])
+        self.linear = nn.Linear(self.d_model, cfg['num_tokens'])
         
     def forward(self, x, attn_mask=None):
-        x = self.transformer_encoder(x, attn_mask=attn_mask)
+
+        embed = x = self.transformer_encoder(x, attn_mask=attn_mask)
         
-        x = x[:, 0, :]
+        logits = self.linear(x)
         
-        x = self.linear(x)
-        
-        return x
-    
+        return logits, embed
     
 class AptamerBert(nn.Module):
     def __init__(self, cfg):
@@ -250,7 +252,7 @@ class AptamerBert(nn.Module):
         
         os.environ["TOKENIZERS_PARALLELISM"] = 'true'
 
-        self.tokenizer = AutoTokenizer.from_pretrained(cfg['tokenizer_path'])
+        self.tokenizer = AutoTokenizer.from_pretrained(cfg['seq_tokenizer_path'])
         self.data_collator = DataCollatorForLanguageModeling(tokenizer=self.tokenizer,  mlm_probability=cfg['mlm_probability'], return_tensors='pt')
         
         self.transformer_encoder = TransformerEncoder(cfg)
@@ -343,7 +345,7 @@ class XTransformerEncoder(nn.Module):
         self.cfg = cfg
         self.device = cfg['device']
         self.d_model = cfg['d_model']
-        self.tokenizer = AutoTokenizer.from_pretrained(cfg['tokenizer_path'])
+        self.tokenizer = AutoTokenizer.from_pretrained(cfg['seq_tokenizer_path'])
         cfg['num_tokens'] = self.tokenizer.vocab_size
         cfg['max_seq_len'] = self.tokenizer.model_max_length
         
