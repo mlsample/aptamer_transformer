@@ -6,9 +6,11 @@ import pickle
 from collections import Counter
 
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, mean_absolute_percentage_error, explained_variance_score
-from sklearn.metrics import accuracy_score, precision_recall_fscore_support, confusion_matrix, roc_curve, auc, matthews_corrcoef
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support, confusion_matrix, roc_curve, auc, matthews_corrcoef, precision_recall_curve
 from scipy.special import softmax
 from sklearn.preprocessing import label_binarize
+from sklearn.calibration import calibration_curve
+
 
 def evaluate_classification(y_true, y_pred_probs):
     # Convert probabilities to class predictions
@@ -59,12 +61,12 @@ def plot_classification_metrics(y_true, y_pred_probs, class_names=None):
 
 def plot_mean_loss(cfg):
     # Read data from JSON file
-    with open(f'{cfg["results_path"]}/loss_data.json', 'r') as f:
-        loss_data = json.load(f)
+    with open(f'{cfg["results_path"]}/metrics.json', 'r') as f:
+        metrics = json.load(f)
 
-    train_loss_means = [np.mean(batch) if idx>0 else batch[-1] for idx,batch in  enumerate(loss_data['train_loss'])]
+    train_loss_means = [np.mean(batch) if idx>0 else batch[-1] for idx,batch in  enumerate(metrics['train_loss'])]
     
-    val_loss_means = [np.mean(batch) if idx>0 else batch[-1] for idx,batch in  enumerate(loss_data['val_loss'])]
+    val_loss_means = [np.mean(batch) if idx>0 else batch[-1] for idx,batch in  enumerate(metrics['val_loss'])]
 
     # Generate the plot
     plt.figure(figsize=(10, 5))
@@ -97,12 +99,12 @@ def evaluate_regression_model(y_true, y_pred):
     explained_variance = explained_variance_score(y_true, y_pred)
 
     # Printing metrics
-    print(f"Mean Squared Error (MSE): {mse}")
-    print(f"Root Mean Squared Error (RMSE): {rmse}")
-    print(f"Mean Absolute Error (MAE): {mae}")
-    print(f"R-squared (Coefficient of Determination): {r2}")
-    print(f"Mean Absolute Percentage Error (MAPE): {mape}")
-    print(f"Explained Variance Score: {explained_variance}")
+    # print(f"Mean Squared Error (MSE): {mse}")
+    # print(f"Root Mean Squared Error (RMSE): {rmse}")
+    # print(f"Mean Absolute Error (MAE): {mae}")
+    # print(f"R-squared (Coefficient of Determination): {r2}")
+    # print(f"Mean Absolute Percentage Error (MAPE): {mape}")
+    # print(f"Explained Variance Score: {explained_variance}")
 
     return mse, rmse, mae, r2, mape, explained_variance
 
@@ -174,7 +176,8 @@ def plot_metrics(processed_true, processed_preds):
     return None
 
 def plot_confusion_matrix(processed_true, processed_preds):
-    nucleotide ={')': 5, '.': 6, '(': 4, 'G': 9, 'C': 8, 'T': 10, 'A': 7}
+    nucleotide = {'T': 11, 'A': 8, ')': 6, 'C': 9, '(': 5, 'G': 10, '.': 7}
+    nucleotide = {k: v for k, v in sorted(nucleotide.items(), key=lambda item: item[1])}
     nucleotide = {v: k for k, v in nucleotide.items()}
     classes = np.unique(processed_true)
     conf_mat = confusion_matrix(processed_true, processed_preds, labels=classes)
@@ -196,7 +199,8 @@ def per_token_metrics(processed_true, processed_preds, tokenizer):
     - processed_true (np.array): True labels.
     - processed_preds (np.array): Predicted labels.
     """
-    nucleotide ={')': 5, 'G': 9, '.': 6, '(': 4, 'C': 8, 'T': 10, 'A': 7}
+    nucleotide = {'T': 11, 'A': 8, ')': 6, 'C': 9, '(': 5, 'G': 10, '.': 7}
+    nucleotide = {k: v for k, v in sorted(nucleotide.items(), key=lambda item: item[1])}
     nucleotide = {v: k for k, v in nucleotide.items()}
     classes = np.unique(processed_true)
     # Initialize dictionary to hold metrics
@@ -261,7 +265,7 @@ def extract_masked_logits(y_preds, target):
 
     return np.array(masked_logits)
 
-def plot_roc_auc_from_logits(masked_logits, processed_true):
+def plot_roc_auc_from_logits(masked_logits, processed_true, tokenizer):
     """
     Calculate and plot ROC curve and AUC from logits for each class using a one-vs-rest approach.
     Args:
@@ -269,28 +273,49 @@ def plot_roc_auc_from_logits(masked_logits, processed_true):
     - processed_true (np.array): True labels for the masked positions.
     - classes (np.array): Array of class labels.
     """
-    nucleotide ={')': 5, 'G': 9, '.': 6, '(': 4, 'C': 8, 'T': 10, 'A': 7}
-    nucleotide = {v: k for k, v in nucleotide.items()}
-    classes = np.unique(processed_true)
-    # Apply softmax to convert logits to probabilities
-    probabilities = softmax(masked_logits, axis=1)
+    nucleotide = {k:v for k,v in tokenizer.vocab.items() if ('N' not in k) and ('[' not in k)}
+    nucleotide = {k: v for k, v in sorted(nucleotide.items(), key=lambda item: item[1])}
+    nucleotide = {k: idx for idx, k in enumerate(nucleotide.keys())}
+    class_names = {v: k for k, v in nucleotide.items()}
 
-    # Binarize the labels for one-vs-rest computation
-    true_binarized = label_binarize(processed_true, classes=classes)
+    n_classes = len(np.unique(processed_true))
+    
+    processed_true_binarized = label_binarize(processed_true, classes=range(5, n_classes+5))
+    probs = softmax(masked_logits, axis=1)
+    
+    
+    # Calculate precision and recall for each class
+    precision = dict()
+    recall = dict()
 
-    plt.figure(figsize=(10, 8))
-    nucleotide = {4: 'A', 5: 'C', 6: 'G', 7: 'T'}
 
-    for i, class_label in enumerate(classes):
-        fpr, tpr, _ = roc_curve(true_binarized[:, i], probabilities[:, i])
-        roc_auc = auc(fpr, tpr)
-        plt.plot(fpr, tpr, label=f'{nucleotide[class_label]} (AUC = {roc_auc:.2f})')
+    # Precision-Recall Curve
+    for i in range(n_classes):
+        precision[i], recall[i], _ = precision_recall_curve(processed_true_binarized[:, i], probs[:, i])
+        plt.plot(recall[i], precision[i], lw=2, label=f'class {class_names[i]}')
 
-    plt.plot([0, 1], [0, 1], color='navy', linestyle='--')  # Diagonal line for reference
+    plt.xlabel('Recall')
+    plt.ylabel('Precision')
+    plt.title('Precision-Recall curve')
+    plt.legend(loc="best")
+    plt.show()
+    
+    fpr = dict()
+    tpr = dict()
+    roc_auc = dict()
+    # ROC-AUC Curve
+    for i in range(n_classes):
+        fpr[i], tpr[i], _ = roc_curve(processed_true_binarized[:, i], probs[:, i])
+        roc_auc[i] = auc(fpr[i], tpr[i])
+        plt.plot(fpr[i], tpr[i], lw=2, label=f'ROC curve of class {class_names[i]} (area = {roc_auc[i]:0.2f})')
+
+    plt.plot([0, 1], [0, 1], 'k--', lw=2)
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
     plt.xlabel('False Positive Rate')
     plt.ylabel('True Positive Rate')
-    plt.title('ROC Curves for Each Nucleotide (Using Logits)')
-    plt.legend(loc='lower right')
+    plt.title('Receiver operating characteristic for multi-class')
+    plt.legend(loc="lower right")
     plt.show()
     
 def find_common_error_subsequences_around_masked(y_true_tokenized, y_preds_tokenized, target, window_size=5):

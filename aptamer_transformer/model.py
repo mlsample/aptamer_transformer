@@ -138,6 +138,31 @@ class TransformerDecoder(nn.Module):
                     pos_enc[pos, i] = np.cos(theta)
         return torch.FloatTensor(pos_enc)
 
+class SeqStructEnerMatrixRegression(nn.Module):
+    def __init__(self, cfg):
+        super(SeqStructEnerMatrixRegression, self).__init__()
+        self.cfg = cfg
+        self.device = cfg['device']
+        self.d_model = cfg['d_model']
+        
+        self.linear1 = nn.Linear(1, cfg['d_model'])
+        self.layers = nn.ModuleList([EncoderLayer(cfg) for _ in range(cfg['num_layers'])])
+        self.linear2 = nn.Linear(cfg['d_model'], 1)
+        self.linear3 = nn.Linear(cfg['max_seq_len'], 1)
+        
+    def forward(self, x, attn_mask=None):
+        x = self.linear1(x)
+        
+        for layer in self.layers:
+            x = layer(x, attn_mask=None)
+        
+        x = self.linear2(x)
+        x = x.squeeze()
+        
+        x = self.linear3(x)
+        
+        return x
+    
 
 class TransformerEncoderClassifier(nn.Module):
     def __init__(self, cfg):
@@ -217,6 +242,9 @@ class StructTransformerEncoderRegression(TransformerEncoderRegression):
     
     
 class SeqStructTransformerEncoderRegression(TransformerEncoderRegression):
+    pass
+
+class SeqStructTransformerEncoderClassifier(TransformerEncoderClassifier):
     pass
 
     
@@ -345,7 +373,7 @@ class XTransformerEncoder(nn.Module):
         self.cfg = cfg
         self.device = cfg['device']
         self.d_model = cfg['d_model']
-        self.tokenizer = AutoTokenizer.from_pretrained(cfg['seq_tokenizer_path'])
+        self.tokenizer = AutoTokenizer.from_pretrained(cfg['seq_struct_tokenizer_path'])
         cfg['num_tokens'] = self.tokenizer.vocab_size
         cfg['max_seq_len'] = self.tokenizer.model_max_length
         
@@ -480,6 +508,84 @@ class XAptamerBert(nn.Module):
         
         return logits, embed
     
+class SeqStructXAptamerBert(XAptamerBert):
+    pass
+    
+    
+class SeqStructXAptamerBertRegression(nn.Module):
+    def __init__(self, cfg):
+        super(SeqStructXAptamerBertRegression, self).__init__()
+
+        self.aptamer_bert_encoding = SeqStructXAptamerBert(cfg)
+        self.aptamer_bert_encoding.load_state_dict(
+            torch.load(cfg['seq_struct_aptamer_bert_path'], map_location=cfg['device']
+                )['model_state_dict']
+            )
+        
+        self.linear = nn.Linear(cfg['d_model'], 1)
+        
+    def forward(self, x, attn_mask=None):
+        logits, embed = self.aptamer_bert_encoding(x, attn_mask=attn_mask)
+        
+        x = embed[:, 0, :]
+        
+        return self.linear(x)
+    
+
+class SeqStructXAptamerBertClassifier(nn.Module):
+    def __init__(self, cfg):
+        super(SeqStructXAptamerBertClassifier, self).__init__()
+
+        self.aptamer_bert_encoding = SeqStructXAptamerBert(cfg)
+        self.aptamer_bert_encoding.load_state_dict(
+            torch.load(cfg['seq_struct_aptamer_bert_path'], map_location=cfg['device']
+                )['model_state_dict']
+            )
+        
+        self.linear = nn.Linear(cfg['d_model'], cfg['num_classes'])
+        
+    def forward(self, x, attn_mask=None):
+        logits, embed = self.aptamer_bert_encoding(x, attn_mask=attn_mask)
+        
+        x = embed[:, 0, :]
+        
+        return self.linear(x)
+    
+    
+class SeqStructXAptamerBertEvidence(nn.Module):
+    def __init__(self, cfg):
+        super(SeqStructXAptamerBertEvidence, self).__init__()
+
+        self.aptamer_bert_encoding = SeqStructXAptamerBert(cfg)
+        self.aptamer_bert_encoding.load_state_dict(
+            torch.load(cfg['seq_struct_aptamer_bert_path'], map_location=cfg['device']
+                )['model_state_dict']
+            )
+        
+        self.linear = nn.Linear(cfg['d_model'], cfg['num_classes'])
+        
+    def forward(self, x, attn_mask=None):
+        logits, embed = self.aptamer_bert_encoding(x, attn_mask=attn_mask)
+        
+        x = embed[:, 0, :]
+        
+        return self.linear(x)
+    
+    def predict_uncertainty(self, input_ids, attn_mask=None):
+        y_pred = self(input_ids, attn_mask=attn_mask)
+        
+        # dempster-shafer theory
+        evidence = relu_evidence(y_pred) # can also try softplus and exp evidence schemes
+        alpha = evidence + 1
+        S = torch.sum(alpha, dim=1, keepdim=True)
+        u = self.n_classes / S
+        prob = alpha / S
+        
+        # law of total uncertainty 
+        epistemic = prob * (1 - prob) / (S + 1)
+        aleatoric = prob - prob**2 - epistemic
+        return prob, u, aleatoric, epistemic
+
 
 class XAptamerBertClassifier(nn.Module):
     def __init__(self, cfg):

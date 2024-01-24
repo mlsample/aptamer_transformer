@@ -3,11 +3,11 @@ import torch.distributed as dist
 from torch import optim
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.tensorboard import SummaryWriter
-
+import numpy as np
 import argparse
 import traceback
 
-from aptamer_transformer.training_utils import train_model, validate_model, test_model, checkpointing, load_checkpoint
+from aptamer_transformer.training_utils import train_model, validate_model, test_model, checkpointing, load_checkpoint, EarlyStopper
 from aptamer_transformer.data_utils import load_dataset, get_data_loaders, read_cfg
 from aptamer_transformer.distributed_utils import ddp_setup_process_group
 from aptamer_transformer.factories_model_loss import get_model, get_lr_scheduler, model_config
@@ -20,12 +20,13 @@ def parse_arguments():
     return parser.parse_known_args()[0]
 
 def main():
-    
-    # Parse command-line arguments
     args = parse_arguments()
-
-    # Read configuration from YAML file
     cfg = read_cfg(args.config)
+    metrics = train_and_evaluate(cfg, args=args)
+    
+    return metrics
+
+def train_and_evaluate(cfg, trial=None, args=None):
     
     # Set the seed for generating random numbers
     torch.manual_seed(cfg['seed_value'])
@@ -52,9 +53,9 @@ def main():
     
     # Load last checkpoint if required
     if cfg['load_last_checkpoint'] is True:
-        model, optimizer, starting_epoch, loss_dict = load_checkpoint(model, optimizer, cfg)
+        model, optimizer, starting_epoch, metrics = load_checkpoint(model, optimizer, cfg)
     else:
-        loss_dict = {'train_loss': [], 'val_loss': []}
+        metrics = {'train_loss': [], 'val_loss': []}
         starting_epoch = 0
     
     # Wrap the model for distributed training
@@ -62,6 +63,7 @@ def main():
         model = DistributedDataParallel(model, device_ids=[cfg['device']], find_unused_parameters=True)
         dist.barrier()
 
+    early_stopper = EarlyStopper(patience=cfg['stopping_patience'], min_delta=cfg['min_delta']) 
     # Main training loop
     for epoch in range(starting_epoch, cfg['num_epochs'] + starting_epoch):
         cfg['curr_epoch'] = epoch
@@ -72,18 +74,25 @@ def main():
         
         try:
             # Train the model for one epoch
-            avg_train_loss, train_loss_list = train_model(model, train_loader, optimizer, cfg)
+            train_metrics = train_model(model, train_loader, optimizer, cfg)
             
             # Validate the model
-            avg_val_loss, val_loss_list = validate_model(model, val_loader, lr_scheduler, cfg)
+            val_metrics = validate_model(model, val_loader, lr_scheduler, cfg)
             
-        except Exception:
+            # if early_stopper.early_stop(val_metrics['avg_val_loss']): 
+            #     print('Early stopping at epoch: ', epoch)            
+            #     break
+            
+        except Exception as e:
             # Print the exception traceback if an error occurs
-            return print(traceback.format_exc())
+            print(traceback.format_exc())
+            raise e
  
         # Save checkpoints and log losses
+        metrics['train_loss'].append(train_metrics['train_loss_list'])
+        metrics['val_loss'].append(val_metrics['val_loss_list'])
         if rank == 0:
-            checkpointing(epoch, avg_train_loss, avg_val_loss, args, model, optimizer, loss_dict, train_loss_list, val_loss_list, cfg)
+            checkpointing(epoch, train_metrics, val_metrics, args, model, optimizer, metrics, cfg)
         
         # Barrier for distributed training
         if args.distributed:
@@ -91,16 +100,17 @@ def main():
             
     # Test the model after training is complete
     try:
-        avg_test_loss, test_loss_list = test_model(model, test_loader, cfg)
+        test_metrics = test_model(model, test_loader, cfg)
         
         # Log test loss
         if rank == 0:
-            print(f"Test Loss: {avg_test_loss}")
+            print(f"Test Loss: {test_metrics['avg_test_loss']}")
             
     except ValueError as e:
-        return print(traceback.format_exc())
-    
-    return None
+        print(traceback.format_exc())
+        raise e
 
+    return metrics
+    
 if __name__ == "__main__":
     main()

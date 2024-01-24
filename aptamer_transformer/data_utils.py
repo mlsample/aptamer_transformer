@@ -11,7 +11,7 @@ import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module='sklearn.preprocessing._data')
 
 
-from sklearn.preprocessing import quantile_transform , StandardScaler
+from sklearn.preprocessing import quantile_transform , StandardScaler, MinMaxScaler
 from torch.utils.data import DataLoader, random_split
 from torch.utils.data.distributed import DistributedSampler
 
@@ -236,6 +236,87 @@ def load_and_preprocess_enrichment_data(cfg):
 
     return df
 
+def log_normalize_enrichment_scores(enrichment_scores):
+    # Convert to DataFrame
+    df_list = []
+    for (round1, round2), sequences in enrichment_scores.items():
+        for sequence, enrichment_score in sequences.items():
+            df_list.append({
+                "Round1": round1,
+                "Round2": round2,
+                "Sequence": sequence,
+                "EnrichmentScore": enrichment_score
+            })
+    
+    df = pd.DataFrame(df_list)
+    df["EnrichmentScore"] = df["EnrichmentScore"].apply(lambda x:np.log(x) )
+    unique_sequences = df.groupby('Sequence')['EnrichmentScore'].agg(['mean', 'sum', 'max', 'min', 'count']).reset_index()
+
+    return unique_sequences
+
+def clean_data(unique_sequences):
+    def is_nucleotide_dominant(sequence):
+        for nucleotide in ['A', 'T', 'C', 'G']:
+            if sequence.count(nucleotide) / len(sequence) > 0.66:
+                return True
+        return False
+    
+    def contains_poly_n(sequence):
+        for nucleotide in ['A', 'T', 'C', 'G']:
+            if nucleotide * 10 in sequence:
+                return True
+        return False
+
+    # Apply the function to filter out sequences
+    df_filtered = unique_sequences[~unique_sequences['Sequence'].apply(is_nucleotide_dominant)]
+    # df_filtered = df_filtered[~df_filtered['Sequence'].apply(contains_poly_n)]
+    df_filtered = df_filtered[df_filtered['count'] > 1]
+    
+    return df_filtered
+
+def scale_data(df, cfg):
+    scaler = MinMaxScaler()
+
+    columns_to_scale = ['mean', 'min', 'max', 'sum', 'energy']
+
+    # Apply scaler to each column separately
+    for col in columns_to_scale:
+        df[col] = scaler.fit_transform(df[[col]])
+
+    df = df.dropna(subset=columns_to_scale)
+    
+    return df
+
+def choose_agg_type(df, cfg):
+        df = df.rename(columns={cfg['agg_type']: 'Normalized_Frequency'})
+        return df
+
+
+def discretized_classification(df, cfg):
+        # Calculate the 95th percentile value
+        threshold = df['Normalized_Frequency'].quantile(cfg['classification_threshold'])
+        # Create a new column where the value is 1 if 'Normalized_Frequency' is in the top 95th percentile, else 0
+        df['Discretized_Frequency'] = (df['Normalized_Frequency'] >= threshold).astype(int)
+        
+        return df
+
+def log_normed_load_and_preprocess_enrichment_data(cfg):
+    """
+    Loads and preprocesses enrichment data based on the provided configuration.
+
+    Parameters:
+    cfg (dict): Configuration dictionary.
+
+    Returns:
+    DataFrame: DataFrame with preprocessed enrichment data.
+    """
+    dfs = read_data_files(cfg)
+    counter_set = normalized_counters(dfs)
+    enrichment_scores = all_enrichments(counter_set)
+    unique_sequences = log_normalize_enrichment_scores(enrichment_scores)
+    
+    return unique_sequences
+
 def load_strucutre_data(cfg):
     """
     Loads structure data from a specified file.
@@ -246,16 +327,27 @@ def load_strucutre_data(cfg):
     Returns:
     DataFrame: DataFrame containing structure data.
     """
-    with open(f'{cfg["working_dir"]}/data/nupack_strucutre_data/mfe.pickle', 'rb') as f:
-        mfe = pickle.load(f)
+    if cfg['log_normed'] is True:
+        with open(f'{cfg["working_dir"]}/data/nupack_strucutre_data/all_mfe.pickle', 'rb') as f:
+            mfe = pickle.load(f)
+
+        energy = {k: v[0].energy for k, v in mfe.items()}
+        dot_bracket = {k: v[0].structure.dotparensplus() for k, v in mfe.items()}
+        strucutre_matrix = {k: v[0].structure.structure_matrix() for k, v in mfe.items()}
+
+        return energy, dot_bracket, strucutre_matrix
     
-    dot_bracket_struc = [mfe[key][0].structure.dotparensplus() for key in mfe.keys()]
-    adjacency_matrix = [mfe[key][0].structure.matrix() for key in mfe.keys()]
-    energy = [mfe[key][0].energy for key in mfe.keys()]
-    
-    struc_df = pd.DataFrame({'dot_bracket_struc': dot_bracket_struc, 'adjacency_matrix': adjacency_matrix, 'energy': energy})
-    
-    return struc_df
+    elif cfg['log_normed'] is False:
+        with open(f'{cfg["working_dir"]}/data/nupack_strucutre_data/mfe.pickle', 'rb') as f:
+            mfe = pickle.load(f)
+
+        dot_bracket_struc = [mfe[key][0].structure.dotparensplus() for key in mfe.keys()]
+        adjacency_matrix = [mfe[key][0].structure.matrix() for key in mfe.keys()]
+        energy = [mfe[key][0].energy for key in mfe.keys()]
+
+        struc_df = pd.DataFrame({'dot_bracket_struc': dot_bracket_struc, 'adjacency_matrix': adjacency_matrix, 'energy': energy})
+        
+        return struc_df
 
 def load_seq_and_struc_data(cfg):
     """
@@ -267,14 +359,27 @@ def load_seq_and_struc_data(cfg):
     Returns:
     DataFrame: DataFrame containing merged sequence and structure data.
     """
-    seq_enrich_df = load_and_preprocess_enrichment_data(cfg)
-    struc_df = load_strucutre_data(cfg)
-    
-    if cfg['debug'] is True:
-        struc_df = struc_df.iloc[:len(seq_enrich_df)]
-    
-    df = pd.concat([seq_enrich_df.reset_index(drop=True), struc_df.reset_index(drop=True)], axis=1)
+    if cfg['log_normed'] is True:
+        unique_sequences = log_normed_load_and_preprocess_enrichment_data(cfg)
+        energy, dot_bracket, strucutre_matrix = load_strucutre_data(cfg)
 
+        unique_sequences['energy'] = unique_sequences['Sequence'].map(energy)
+        unique_sequences['dot_bracket'] = unique_sequences['Sequence'].map(dot_bracket)
+        unique_sequences['strucutre_matrix'] = unique_sequences['Sequence'].map(strucutre_matrix)
+
+        df_filtered = clean_data(unique_sequences)
+        scaled_data = scale_data(df_filtered, cfg)
+        df = choose_agg_type(scaled_data, cfg)
+        df = discretized_classification(df, cfg)
+        df = df.reset_index(drop=True)
+    
+    elif cfg['log_normed'] is False:
+        seq_enrich_df = load_and_preprocess_enrichment_data(cfg)
+        struc_df = load_strucutre_data(cfg)
+        if cfg['debug'] is True:
+            struc_df = struc_df.iloc[:len(seq_enrich_df)]
+        df = pd.concat([seq_enrich_df.reset_index(drop=True), struc_df.reset_index(drop=True)], axis=1)
+        
     return df
 
 
@@ -304,7 +409,7 @@ def load_dataset(cfg):
         
     cfg['num_tokens'] = dna_dataset.tokenizer.vocab_size
     cfg['max_seq_len'] = dna_dataset.tokenizer.model_max_length
-        
+    
     return dna_dataset
 
 

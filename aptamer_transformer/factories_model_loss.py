@@ -41,6 +41,16 @@ def model_config(cfg):
             "learning_task": "regression",
             "dataset_class": SeqStructRegressionDataSet,
         },
+        'seq_struct_ener_matrix_transformer_encoder_regression': {
+            "class": SeqStructEnerMatrixRegression,
+            "learning_task": "regression",
+            "dataset_class": XGBoostDataset,
+        },
+        'seq_struct_x_aptamer_bert_regression': {
+            'class': SeqStructXAptamerBertRegression,
+            'learning_task': 'regression',
+            'dataset_class': SeqStructRegressionDataSet,
+        },
 
         ############################
         # Classification Models
@@ -70,6 +80,16 @@ def model_config(cfg):
             "learning_task": "classifier",
             "dataset_class": SeqClassifierDataset,
         },
+        'seq_struct_x_aptamer_bert_classifier': {
+            "class": SeqStructXAptamerBertClassifier,
+            "learning_task": "classifier",
+            "dataset_class": SeqStructClassifierDataSet,
+        },
+        'seq_struct_transformer_encoder_classifier': {
+            "class": SeqStructTransformerEncoderClassifier,
+            "learning_task": "classifier",
+            "dataset_class": SeqStructClassifierDataSet,
+        },
         ############################
         # Evidence Models
         ############################
@@ -93,6 +113,11 @@ def model_config(cfg):
             "learning_task": "evidence",
             "dataset_class": SeqClassifierDataset,
         },
+        "seq_struct_x_aptamer_bert_evidence": {
+            "class": SeqStructXAptamerBertEvidence,
+            "learning_task": "evidence",
+            "dataset_class": SeqStructClassifierDataSet,
+        },
 
         ############################
         # Masked Language Models
@@ -110,7 +135,12 @@ def model_config(cfg):
         "seq_struct_aptamer_bert": {
             "class": SeqStructAptamerBert,
             "learning_task": "masked_language_model",
-            "dataset_class": SeqStructBertDataSet,
+            "dataset_class": SeqStructRegressionDataSet,
+        },
+        'seq_struct_x_aptamer_bert': {
+            "class": SeqStructXAptamerBert,
+            "learning_task": "masked_language_model",
+            "dataset_class": SeqStructRegressionDataSet,
         },
         
     }
@@ -158,10 +188,17 @@ def get_loss_function(cfg):
 
 def compute_model_output(model, model_inputs, cfg):
     learning_task = cfg['model_config']['learning_task']
+    
+    if cfg['model_type'] == 'seq_struct_ener_matrix_transformer_encoder_regression':
+        concatened_features = model_inputs[0]
+        concatened_features = concatened_features.to(cfg['device'])
+        output = model(concatened_features)
+        return output
+        
     ####################################################
     # Classification, Evidence, and Regression Models
     ####################################################
-    if learning_task in ('classifier', 'evidence', 'regression'):
+    elif learning_task in ('classifier', 'evidence', 'regression'):
         
         tokenized_seqs = model_inputs[0].to(cfg['device'])
         attn_mask = model_inputs[1].bool()
@@ -175,14 +212,21 @@ def compute_model_output(model, model_inputs, cfg):
     ############################
     elif learning_task == 'masked_language_model':
         
-        tokenizer = AutoTokenizer.from_pretrained(cfg['seq_struct_tokenizer_path'])
-        data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer,  mlm_probability=cfg['mlm_probability'])
-        
-        tokenized_data = tokenizer(model_inputs[0], padding=True)
-        seqs = tokenized_data['input_ids']
-        attn_mask = ~torch.Tensor(tokenized_data['attention_mask']).bool().to(cfg['device'])
+        if 'seq_struct' in cfg['model_type']:
+            tokenizer = AutoTokenizer.from_pretrained(cfg['seq_struct_tokenizer_path'])
+            seqs = model_inputs[0].numpy()
+            attn_mask = model_inputs[1].bool()
+            attn_mask = ~attn_mask.to(cfg['device'])
+            
+        else:
+            tokenizer = AutoTokenizer.from_pretrained(cfg['seq_tokenizer_path'])
+            tokenized_data = tokenizer(model_inputs[0], padding=True)
+            seqs = tokenized_data['input_ids']
+            attn_mask = ~torch.Tensor(tokenized_data['attention_mask']).bool().to(cfg['device'])
 
+        data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer,  mlm_probability=cfg['mlm_probability'])
         masked_data = data_collator(seqs)
+        
         masked_seqs = masked_data['input_ids'].to(cfg['device'])
         tgt = masked_data['labels'].to(cfg['device'])
         
