@@ -1,5 +1,5 @@
 # Model used
-model_type: "seq_struct_x_aptamer_bert_evidence"  
+model_type: "x_aptamer_bert"  
 
 
 #Path parameters
@@ -43,7 +43,7 @@ min_delta: 0
 mlm_probability: 0.1
 aptamer_bert_path: '{WORKING_DIR}/results/aptamer_bert/aptamer_bert_checkpoint_to_load.pt' #Current aptamer_bert checkpoint parameters are num_layers: 6, d_model: 64, nhead: 8, d_ff: 512, dropout_rate: 0.1  
 x_aptamer_bert_path: '{WORKING_DIR}/results/x_aptamer_bert/x_aptamer_bert_checkpoint.pt'
-seq_struct_aptamer_bert_path: '{WORKING_DIR}/results/seq_struct_x_aptamer_bert/seq_struct_x_aptamer_bert_checkpoint.pt'
+seq_struct_aptamer_bert_path: '{WORKING_DIR}/results/seq_struct_x_aptamer_bert/seq_struct_x_aptamer_bert_checkpoint.pt' # num_layers: 250, d_model: 120, nhead: 2, d_ff: 2, dropout_rate: 0.4
 
 # Tokenizers
 seq_tokenizer_path: '{WORKING_DIR}/data/tokenizers/AptamerBERT_tokenizer'
@@ -65,7 +65,7 @@ save_data_set: False
 load_saved_data_set: True
 debug: False
 data_directory: '{WORKING_DIR}/data/seq_data/sars-cov2-raw'
-load_saved_df: False
+load_saved_df: '{WORKING_DIR}/data/saved_processed_data/saved_dfs/log_normed_thresh5.pickle'
 
 
 # X_transformer parameters

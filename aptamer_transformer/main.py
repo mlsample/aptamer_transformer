@@ -14,7 +14,7 @@ from aptamer_transformer.factories_model_loss import get_model, get_lr_scheduler
 
 
 def parse_arguments():
-    parser = argparse.ArgumentParser(description='Aptamer occurance regression task')
+    parser = argparse.ArgumentParser(description='Aptamer Transformer Training Script')
     parser.add_argument('--config', type=str, default='config.yaml', help='Path to the configuration file')
     parser.add_argument('--distributed', action='store_true', help='Enable distributed training')
     return parser.parse_known_args()[0]

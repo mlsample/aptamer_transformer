@@ -37,7 +37,7 @@ class SeqClassifierDataset(Dataset):
     
     @classmethod
     def file_path_to_pickled_dataset(cls, cfg):
-        return f'{cfg["working_dir"]}/data/saved_processed_data/pickled/seq_classifier_dataset.pickle'
+        return f'{cfg["working_dir"]}/data/saved_processed_data/saved_datasets/seq_classifier_dataset.pickle'
 
     
 class SeqRegressionDataset(Dataset):
@@ -68,7 +68,7 @@ class SeqRegressionDataset(Dataset):
     
     @classmethod
     def file_path_to_pickled_dataset(cls, cfg):
-        return f'{cfg["working_dir"]}/data/saved_processed_data/pickled/seq_regression_dataset.pickle'
+        return f'{cfg["working_dir"]}/data/saved_processed_data/saved_datasets/seq_regression_dataset.pickle'
 
 
 class SeqBertDataSet(Dataset):
@@ -97,7 +97,7 @@ class SeqBertDataSet(Dataset):
     
     @classmethod
     def file_path_to_pickled_dataset(cls, cfg):
-        return f'{cfg["working_dir"]}/data/saved_processed_data/pickled/seq_bert_dataset.pickle'
+        return f'{cfg["working_dir"]}/data/saved_processed_data/saved_datasets/seq_bert_dataset.pickle'
 
     
 class StructClassifierDataset(Dataset):
@@ -130,7 +130,7 @@ class StructClassifierDataset(Dataset):
     
     @classmethod
     def file_path_to_pickled_dataset(cls, cfg):
-        return f'{cfg["working_dir"]}/data/saved_processed_data/pickled/struct_classifier_dataset.pickle'
+        return f'{cfg["working_dir"]}/data/saved_processed_data/saved_datasets/struct_classifier_dataset.pickle'
 
     
 class StructRegressionDataset(Dataset):
@@ -163,7 +163,7 @@ class StructRegressionDataset(Dataset):
 
     @classmethod
     def file_path_to_pickled_dataset(cls, cfg):
-        return f'{cfg["working_dir"]}/data/saved_processed_data/pickled/struct_regression_dataset.pickle'
+        return f'{cfg["working_dir"]}/data/saved_processed_data/saved_datasets/struct_regression_dataset.pickle'
     
 
 class SeqStructEnerMatrixRegressionDataSet(Dataset):
@@ -201,7 +201,7 @@ class SeqStructEnerMatrixRegressionDataSet(Dataset):
     
     @classmethod
     def file_path_to_pickled_dataset(cls, cfg):
-        return f'{cfg["working_dir"]}/data/saved_processed_data/pickled/seq_struct_regression_dataset.pickle'
+        return f'{cfg["working_dir"]}/data/saved_processed_data/saved_datasets/seq_struct_regression_dataset.pickle'
 
 class SeqStructRegressionDataSet(Dataset):
     def __init__(self, df, cfg):
@@ -236,7 +236,7 @@ class SeqStructRegressionDataSet(Dataset):
     
     @classmethod
     def file_path_to_pickled_dataset(cls, cfg):
-        return f'{cfg["working_dir"]}/data/saved_processed_data/pickled/seq_struct_regression_dataset.pickle'
+        return f'{cfg["working_dir"]}/data/saved_processed_data/saved_datasets/seq_struct_regression_dataset.pickle'
 
     
 class SeqStructClassifierDataSet(Dataset):
@@ -272,7 +272,7 @@ class SeqStructClassifierDataSet(Dataset):
     
     @classmethod
     def file_path_to_pickled_dataset(cls, cfg):
-        return f'{cfg["working_dir"]}/data/saved_processed_data/pickled/seq_struct_classification_dataset.pickle'
+        return f'{cfg["working_dir"]}/data/saved_processed_data/saved_datasets/seq_struct_classification_dataset.pickle'
 
     
 class SeqStructBertDataSet(Dataset):
@@ -303,7 +303,7 @@ class SeqStructBertDataSet(Dataset):
     
     @classmethod
     def file_path_to_pickled_dataset(cls, cfg):
-        return f'{cfg["working_dir"]}/data/saved_processed_data/pickled/seq_struct_bert_dataset.pickle'
+        return f'{cfg["working_dir"]}/data/saved_processed_data/saved_datasets/seq_struct_bert_dataset.pickle'
 
 
 class XGBoostDataset(Dataset):
@@ -359,7 +359,7 @@ class XGBoostDataset(Dataset):
 
     @classmethod
     def file_path_to_pickled_dataset(cls, cfg):
-        return f'{cfg["working_dir"]}/data/saved_processed_data/pickled/xgboost_dataset.pickle'
+        return f'{cfg["working_dir"]}/data/saved_processed_data/saved_datasets/xgboost_dataset.pickle'
 
 
 class PsudoObject:

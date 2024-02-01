@@ -529,7 +529,7 @@ class SeqStructXAptamerBertRegression(nn.Module):
         
         x = embed[:, 0, :]
         
-        return self.linear(x)
+        return self.linear(x), embed
     
 
 class SeqStructXAptamerBertClassifier(nn.Module):

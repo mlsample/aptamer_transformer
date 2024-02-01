@@ -90,6 +90,7 @@ def normalized_counters(dfs):
             counter[key] /= total
     return counter_set
 
+
 def get_enrichment(round_1_count, round_2_count):
     """
     Calculates the enrichment score for sequences present in both count dictionaries.
@@ -104,7 +105,9 @@ def get_enrichment(round_1_count, round_2_count):
     enrichment = {}
     for seq_key in round_1_count.keys():
         if seq_key in round_2_count:
-            enrichment[seq_key] = round_2_count[seq_key] / round_1_count[seq_key]
+            enrichment[seq_key] = round_2_count[seq_key] /round_1_count[seq_key]
+        else:
+            enrichment[seq_key] = 0
     return enrichment
 
 def all_enrichments(counter_set):
@@ -395,11 +398,7 @@ def load_dataset(cfg):
     object: A PyTorch dataset object.
     """
     if cfg['load_saved_data_set'] is not True:
-        if cfg['load_saved_df'] is not False:
-            df = pd.read_pickle(cfg['load_saved_df'])
-        else:
-            df = load_seq_and_struc_data(cfg)
-        
+        df = load_df(cfg)
         dna_dataset = get_pytorch_dataset(df, cfg)
     else:            
         dna_dataset = load_saved_data_set(cfg)
@@ -411,6 +410,20 @@ def load_dataset(cfg):
     cfg['max_seq_len'] = dna_dataset.tokenizer.model_max_length
     
     return dna_dataset
+
+
+def load_df(cfg):
+    if cfg['load_saved_df'] is False:
+        df = load_seq_and_struc_data(cfg)
+    else:
+        try:
+            df = pd.read_pickle(cfg['load_saved_df'])
+        except:
+            print('Saving df')
+            df = load_seq_and_struc_data(cfg)
+            df.to_pickle(cfg['load_saved_df']) 
+                
+    return df
 
 
 def get_pytorch_dataset(df, cfg):
