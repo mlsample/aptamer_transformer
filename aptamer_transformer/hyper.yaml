@@ -1,5 +1,5 @@
 log: True
-save_path: '/glade/u/home/mlsample/work/aptamer_transformer/echo_opt_runs/x_trans_seq_struct_aptamer_bert_0'
+save_path: '/scratch/mlsample/research/project_files/aptamer_transformer/echo_opt_runs/wip_example'
 
 pbs:
   jobs: 16
@@ -18,7 +18,7 @@ optuna:
   storage: "apt_hyper.db"
   study_name: "apt_hyper"
   storage_type: "nfs"
-  objective: "/glade/u/home/mlsample/work/aptamer_transformer/aptamer_transformer/echo_hyperparam_opt.py"
+  objective: "/scratch/mlsample/research/project_files/aptamer_transformer/aptamer_transformer/echo_hyperparam_opt.py"
   direction: "minimize"
   metric: "val_loss"
   n_trials: 1000
@@ -32,7 +32,7 @@ optuna:
       settings:
         name: "batch_size"
         low: 10
-        high: 2048
+        high: 4096
     learning_rate:
       type: "loguniform"
       settings:
@@ -44,13 +44,13 @@ optuna:
       settings:
         name: "num_layers"
         low: 1
-        high: 24
+        high: 2
     d_model:
       type: "int"
       settings:
         name: "d_model"
         low: 8
-        high: 256
+        high: 32
         step: 8
     mlm_probability:
       type: "float"
@@ -63,13 +63,13 @@ optuna:
       settings:
         name: "attn_num_mem_kv"
         low: 0
-        high: 16
+        high: 0
     num_memory_tokens:
       type: "int"
       settings:
         name: "num_memory_tokens"
         low: 0
-        high: 16
+        high: 0
     emb_dropout:
       type: "float"
       settings:
@@ -94,16 +94,16 @@ optuna:
         name: "ff_dropout"
         low: 0.0
         high: 0.9
-    l2norm_embed:
-      type: "categorical"
-      settings:
-        name: "l2norm_embed"
-        choices: [True, False]
-    use_scalenorm:
-      type: "categorical"
-      settings:
-        name: "use_scalenorm"
-        choices: [True, False]
+    # l2norm_embed:
+    #   type: "categorical"
+    #   settings:
+    #     name: "l2norm_embed"
+    #     choices: [True, False]
+    # use_scalenorm:
+    #   type: "categorical"
+    #   settings:
+    #     name: "use_scalenorm"
+    #     choices: [True, False]
     attn_flash:
       type: "categorical"
       settings:
@@ -114,31 +114,31 @@ optuna:
       settings:
         name: "ff_glu"
         choices: [True, False]
-    ff_swish:
-      type: "categorical"
-      settings:
-        name: "ff_swish"
-        choices: [True, False]
+    # ff_swish:
+    #   type: "categorical"
+    #   settings:
+    #     name: "ff_swish"
+    #     choices: [True, False]
     ff_no_bias:
       type: "categorical"
       settings:
         name: "ff_no_bias"
         choices: [True, False]
-    attn_talking_heads:
-      type: "categorical"
-      settings:
-        name: "attn_talking_heads"
-        choices: [True, False]
-    attn_gate_values:
-      type: "categorical"
-      settings:
-        name: "attn_gate_values"
-        choices: [True, False]
-    macaron:
-      type: "categorical"
-      settings:
-        name: "macaron"
-        choices: [True, False]
+    # attn_talking_heads:
+    #   type: "categorical"
+    #   settings:
+    #     name: "attn_talking_heads"
+    #     choices: [True, False]
+    # attn_gate_values:
+    #   type: "categorical"
+    #   settings:
+    #     name: "attn_gate_values"
+    #     choices: [True, False]
+    # macaron:
+    #   type: "categorical"
+    #   settings:
+    #     name: "macaron"
+    #     choices: [True, False]
     rel_pos_bias:
       type: "categorical"
       settings:
@@ -149,33 +149,33 @@ optuna:
       settings:
         name: "rotary_pos_emb"
         choices: [True, False]
-    rotary_xpos:
-      type: "categorical"
-      settings:
-        name: "rotary_xpos"
-        choices: [True, False]
+    # rotary_xpos:
+    #   type: "categorical"
+    #   settings:
+    #     name: "rotary_xpos"
+    #     choices: [True, False]
     alibi_pos_bias:
       type: "categorical"
       settings:
         name: "alibi_pos_bias"
         choices: [True, False]
-    residual_attn:
-      type: "categorical"
-      settings:
-        name: "residual_attn"
-        choices: [True, False]
-    pre_norm:
-      type: "categorical"
-      settings:
-        name: "pre_norm"
-        choices: [True, False]
-    attn_qk_norm:
-      type: "categorical"
-      settings:
-        name: "attn_qk_norm"
-        choices: [True, False]
-    attn_qk_norm_dim_scale:
-      type: "categorical"
-      settings:
-        name: "attn_qk_norm_dim_scale"
-        choices: [True, False]
+    # residual_attn:
+    #   type: "categorical"
+    #   settings:
+    #     name: "residual_attn"
+    #     choices: [True, False]
+    # pre_norm:
+    #   type: "categorical"
+    #   settings:
+    #     name: "pre_norm"
+    #     choices: [True, False]
+    # attn_qk_norm:
+    #   type: "categorical"
+    #   settings:
+    #     name: "attn_qk_norm"
+    #     choices: [True, False]
+    # attn_qk_norm_dim_scale:
+    #   type: "categorical"
+    #   settings:
+    #     name: "attn_qk_norm_dim_scale"
+    #     choices: [True, False]

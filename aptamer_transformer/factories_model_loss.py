@@ -5,7 +5,6 @@ from mlguess.torch.class_losses import edl_digamma_loss
 from aptamer_transformer.model import *
 from aptamer_transformer.dataset import *
 
-
 def model_config(cfg):
     MODEL_CONFIG = {
         ############################
@@ -244,7 +243,7 @@ def compute_loss(loss_function, output, target, cfg):
     # Evidence Models
     ############################
     if learning_task == 'evidence':
-        annealing_coefficient = 10
+        annealing_coefficient = 1
         target_hot = F.one_hot(target.long(), cfg['num_classes'])
         return loss_function(output, target_hot, cfg['curr_epoch'], cfg['num_classes'], annealing_coefficient, device=cfg['device']) 
     

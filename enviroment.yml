@@ -1,0 +1,17 @@
+name: guess_apt
+channels:
+- conda-forge
+- pkgs/main
+- pytorch
+dependencies:
+- ipykernel
+- python=3.11.8
+- pytorch
+- pytorch-cuda=12.1
+- scienceplots
+- seaborn
+- tensorboard
+- torchaudio
+- torchvision
+- transformers
+

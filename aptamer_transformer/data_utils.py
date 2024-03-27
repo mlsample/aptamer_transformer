@@ -16,10 +16,11 @@ from torch.utils.data import DataLoader, random_split
 from torch.utils.data.distributed import DistributedSampler
 
 from aptamer_transformer.dataset import *
-from aptamer_transformer.factories_model_loss import model_config
 
 
-def read_cfg(args_config):
+
+
+def read_cfg(args_config, new_working_dir=None):
     """
     Reads the YAML configuration file and returns a dictionary of configurations.
 
@@ -29,9 +30,12 @@ def read_cfg(args_config):
     Returns:
     dict: Dictionary containing configurations with keys as configuration names and values as configuration values.
     """
+    from aptamer_transformer.factories_model_loss import model_config
     with open(args_config, 'r') as stream:
         try:
             cfg = yaml.safe_load(stream)
+            if new_working_dir is not None:
+                cfg['working_dir'] = new_working_dir
             working_dir = cfg['working_dir']
             model_type = cfg['model_type']
             cfg = {k: v.replace('{WORKING_DIR}', f'{working_dir}') if isinstance(v, str) else v for k, v in cfg.items()}

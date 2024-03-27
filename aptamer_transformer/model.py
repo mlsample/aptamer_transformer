@@ -2,11 +2,13 @@ import torch
 import torch.nn as nn
 import numpy as np
 import os
+from sklearn.preprocessing import MinMaxScaler
 from x_transformers import XTransformer, TransformerWrapper, Decoder, Encoder
+from aptamer_transformer.load_foundation_models import load_seq_struct_x_aptamer_transformer
 
 os.environ["TOKENIZERS_PARALLELISM"] = 'true'
 from transformers import AutoTokenizer, DataCollatorForLanguageModeling
-from mlguess.torch.class_losses import relu_evidence
+from mlguess.torch.class_losses import relu_evidence, softplus_evidence, exp_evidence
     
 
 class MultiHeadAttention(nn.Module):
@@ -516,11 +518,8 @@ class SeqStructXAptamerBertRegression(nn.Module):
     def __init__(self, cfg):
         super(SeqStructXAptamerBertRegression, self).__init__()
 
-        self.aptamer_bert_encoding = SeqStructXAptamerBert(cfg)
-        self.aptamer_bert_encoding.load_state_dict(
-            torch.load(cfg['seq_struct_aptamer_bert_path'], map_location=cfg['device']
-                )['model_state_dict']
-            )
+        self.aptamer_bert_encoding = load_seq_struct_x_aptamer_transformer(cfg)
+
         
         self.linear = nn.Linear(cfg['d_model'], 1)
         
@@ -536,18 +535,22 @@ class SeqStructXAptamerBertClassifier(nn.Module):
     def __init__(self, cfg):
         super(SeqStructXAptamerBertClassifier, self).__init__()
 
-        self.aptamer_bert_encoding = SeqStructXAptamerBert(cfg)
-        self.aptamer_bert_encoding.load_state_dict(
-            torch.load(cfg['seq_struct_aptamer_bert_path'], map_location=cfg['device']
-                )['model_state_dict']
-            )
+        self.aptamer_bert_encoding = load_seq_struct_x_aptamer_transformer(cfg)
         
-        self.linear = nn.Linear(cfg['d_model'], cfg['num_classes'])
+        self.linear_0 = nn.Linear(120, cfg['d_model'])
+        
+        self.x_transformer_encoder= XTransformerEncoder(cfg)
+        
+        self.linear_1 = nn.Linear(cfg['d_model'], cfg['num_classes'])
         
     def forward(self, x, attn_mask=None):
-        logits, embed = self.aptamer_bert_encoding(x, attn_mask=attn_mask)
+        logits, x = self.aptamer_bert_encoding(x, attn_mask=attn_mask)
         
-        x = embed[:, 0, :]
+        x = self.linear_0(x)
+        
+        logits, x = self.x_transformer_encoder(x, attn_mask=attn_mask)
+        
+        x = x[:, 0, :]
         
         return self.linear(x)
     
@@ -556,13 +559,10 @@ class SeqStructXAptamerBertEvidence(nn.Module):
     def __init__(self, cfg):
         super(SeqStructXAptamerBertEvidence, self).__init__()
 
-        self.aptamer_bert_encoding = SeqStructXAptamerBert(cfg)
-        self.aptamer_bert_encoding.load_state_dict(
-            torch.load(cfg['seq_struct_aptamer_bert_path'], map_location=cfg['device']
-                )['model_state_dict']
-            )
+        self.aptamer_bert_encoding = load_seq_struct_x_aptamer_transformer(cfg)
         
         self.linear = nn.Linear(cfg['d_model'], cfg['num_classes'])
+        
         
     def forward(self, x, attn_mask=None):
         logits, embed = self.aptamer_bert_encoding(x, attn_mask=attn_mask)
@@ -580,11 +580,13 @@ class SeqStructXAptamerBertEvidence(nn.Module):
         S = torch.sum(alpha, dim=1, keepdim=True)
         u = self.n_classes / S
         prob = alpha / S
+        prob = MinMaxScaler().fit_transform(prob)
         
         # law of total uncertainty 
         epistemic = prob * (1 - prob) / (S + 1)
         aleatoric = prob - prob**2 - epistemic
         return prob, u, aleatoric, epistemic
+
 
 
 class XAptamerBertClassifier(nn.Module):
@@ -658,4 +660,24 @@ class XAptamerBertRegression(nn.Module):
         x = embed[:, 0, :]
         
         return self.linear(x)
+
     
+class MinMaxScaler:
+    def __init__(self, min_val=0.0, max_val=1.0):
+        self.min_val = min_val
+        self.max_val = max_val
+        self.data_min = None
+        self.data_max = None
+
+    def fit(self, X):
+        self.data_min = X.min(dim=0)[0]
+        self.data_max = X.max(dim=0)[0]
+
+    def transform(self, X):
+        X_scaled = (X - self.data_min) / (self.data_max - self.data_min)
+        X_scaled = X_scaled * (self.max_val - self.min_val) + self.min_val
+        return X_scaled
+
+    def fit_transform(self, X):
+        self.fit(X)
+        return self.transform(X)

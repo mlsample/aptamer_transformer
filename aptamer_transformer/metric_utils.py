@@ -70,8 +70,8 @@ def plot_mean_loss(cfg):
 
     # Generate the plot
     plt.figure(figsize=(10, 5))
-    plt.plot(train_loss_means, label='Mean Training Loss')
-    plt.plot(val_loss_means, label='Mean Validation Loss')
+    plt.plot(train_loss_means[1:], label='Mean Training Loss')
+    plt.plot(val_loss_means[1:], label='Mean Validation Loss')
     plt.title('Mean Training and Validation Loss Over Time')
     plt.xlabel('Epoch')
     plt.ylabel('Mean Loss')

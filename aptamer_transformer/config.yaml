@@ -1,36 +1,39 @@
 # Model used
-model_type: "x_aptamer_bert"  
+model_type: "seq_struct_x_aptamer_bert"  
 
 
 #Path parameters
-working_dir: '/glade/u/home/mlsample/work/aptamer_transformer'
+working_dir: '/scratch/mlsample/research/project_files/aptamer_transformer'
 checkpoint_path: '{WORKING_DIR}/results/{MODEL_TYPE}/{MODEL_TYPE}_checkpoint.pt'
 results_path: '{WORKING_DIR}/results/{MODEL_TYPE}'
 
 
 #Logging parameters
-load_last_checkpoint: True
+load_last_checkpoint: False
 running_echo: False
 
+# Data_set: 'sars-cov2-raw'
+save_data_set: False
+load_saved_data_set: True
+load_saved_df: '{WORKING_DIR}/data/saved_processed_data/saved_dfs/log_normed_thresh5.pickle'
 
 # Training data parameters
 seed_value: 42
-num_epochs: 1
-batch_size: 90
-num_workers: 2
+num_epochs: 5
+batch_size: 8096
+num_workers: 4
 
 
 # Transformer parameters
-num_layers: 250
-d_model: 120
-d_ff: 2
+num_layers: 1
+d_model: 8
+d_ff: 64
 dropout_rate: 0.4
-nhead: 2
+nhead: 8
 num_classes: 2 # Only valid if model_task is classification or evidence and load_saved_data_set is False  
 
-
 # Optimizer parameters
-learning_rate: 0.0001
+learning_rate: 0.001
 lr_patience: 3
 lr_scheduler: ReduceLROnPlateau
 
@@ -43,7 +46,7 @@ min_delta: 0
 mlm_probability: 0.1
 aptamer_bert_path: '{WORKING_DIR}/results/aptamer_bert/aptamer_bert_checkpoint_to_load.pt' #Current aptamer_bert checkpoint parameters are num_layers: 6, d_model: 64, nhead: 8, d_ff: 512, dropout_rate: 0.1  
 x_aptamer_bert_path: '{WORKING_DIR}/results/x_aptamer_bert/x_aptamer_bert_checkpoint.pt'
-seq_struct_aptamer_bert_path: '{WORKING_DIR}/results/seq_struct_x_aptamer_bert/seq_struct_x_aptamer_bert_checkpoint.pt' # num_layers: 250, d_model: 120, nhead: 2, d_ff: 2, dropout_rate: 0.4
+seq_struct_aptamer_bert_path: '{WORKING_DIR}/results/seq_struct_x_aptamer_bert_loader' # num_layers: 250, d_model: 120, nhead: 2, d_ff: 2, dropout_rate: 0.4
 
 # Tokenizers
 seq_tokenizer_path: '{WORKING_DIR}/data/tokenizers/AptamerBERT_tokenizer'
@@ -58,14 +61,8 @@ n_quantiles: 1000
 round_weighting: False # Only valid if load_saved_data_set is False
 agg_type: 'mean'
 log_normed: True
-
-
-# Data_set: 'sars-cov2-raw'
-save_data_set: False
-load_saved_data_set: True
 debug: False
 data_directory: '{WORKING_DIR}/data/seq_data/sars-cov2-raw'
-load_saved_df: '{WORKING_DIR}/data/saved_processed_data/saved_dfs/log_normed_thresh5.pickle'
 
 
 # X_transformer parameters

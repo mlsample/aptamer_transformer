@@ -7,7 +7,6 @@ import json
 from aptamer_transformer.factories_model_loss import get_loss_function, compute_loss, compute_model_output
 from aptamer_transformer.metric_utils import *
 
-
 def train_model(model, train_loader, optimizer, cfg):
     # Set the model to training mode
     model.train()
@@ -136,6 +135,12 @@ def test_model(model, test_loader, cfg):
 
 def load_checkpoint(model, optimizer, cfg):
     checkpoint = torch.load(cfg['checkpoint_path'], map_location=cfg['device'])
+    for idx in range(len(checkpoint['model_state_dict'])):
+        param_set = list(checkpoint['model_state_dict'].keys())[idx]
+        if '.to_logits.bias' in param_set:
+            del checkpoint['model_state_dict'][param_set]
+            checkpoint['optimizer_state_dict']['param_groups'][0]['params'].pop()
+            break
     
     model.load_state_dict(checkpoint['model_state_dict'])
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
